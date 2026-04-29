@@ -8,16 +8,31 @@ import { Lobby } from "./pages/Lobby";
 import { GameBoard } from "./pages/GameBoard";
 import { GameOver } from "./pages/GameOver";
 
+interface GameEndedData {
+  winnerId: string;
+  winnerName: string;
+  scores: { playerId: string; name: string; score: number; rackValue: number }[];
+  roundNumber: number;
+  isStalemate: boolean;
+  gamesWon: { playerId: string; gamesWon: number }[];
+}
+
 export function App() {
   const [gameState, setGameState] = useState<PlayerGameState | null>(null);
-  const [playerId, setPlayerId] = useState<string | null>(null);
-  const [gameCode, setGameCode] = useState<string | null>(null);
+  const [playerId, setPlayerId] = useState<string | null>(() => localStorage.getItem("rummikub_playerId"));
+  const [gameCode, setGameCode] = useState<string | null>(() => localStorage.getItem("rummikub_gameCode"));
   const [error, setError] = useState<string | null>(null);
-  const [gameEnded, setGameEnded] = useState<{
-    winnerId: string;
-    winnerName: string;
-    scores: { playerId: string; name: string; score: number; rackValue: number }[];
-  } | null>(null);
+  const [gameEnded, setGameEnded] = useState<GameEndedData | null>(null);
+
+  useEffect(() => {
+    if (playerId) localStorage.setItem("rummikub_playerId", playerId);
+    else localStorage.removeItem("rummikub_playerId");
+  }, [playerId]);
+
+  useEffect(() => {
+    if (gameCode) localStorage.setItem("rummikub_gameCode", gameCode);
+    else localStorage.removeItem("rummikub_gameCode");
+  }, [gameCode]);
 
   useEffect(() => {
     socket.on("game:state", ({ gameState: state }: { gameState: PlayerGameState }) => {
@@ -28,7 +43,7 @@ export function App() {
       setGameState(state);
     });
 
-    socket.on("game:ended", (data: { winnerId: string; winnerName: string; scores: { playerId: string; name: string; score: number; rackValue: number }[] }) => {
+    socket.on("game:ended", (data: GameEndedData) => {
       setGameEnded(data);
     });
 
@@ -42,12 +57,23 @@ export function App() {
       setTimeout(() => setError(null), 3000);
     });
 
+    socket.on("game:created", ({ gameCode: code, playerId: pid }: { gameCode: string; playerId: string }) => {
+      setPlayerId(pid);
+      setGameCode(code);
+    });
+
+    socket.on("game:joined", ({ playerId: pid }: { playerId: string; opponentName: string }) => {
+      setPlayerId(pid);
+    });
+
     return () => {
       socket.off("game:state");
       socket.off("game:started");
       socket.off("game:ended");
       socket.off("move:rejected");
       socket.off("game:error");
+      socket.off("game:created");
+      socket.off("game:joined");
     };
   }, []);
 
@@ -77,20 +103,31 @@ export function App() {
 
 function GameBoardWrapper() {
   const { gameState, playerId } = useGame();
-  const [gameEnded, setGameEnded] = useState<{
-    winnerId: string;
-    winnerName: string;
-    scores: { playerId: string; name: string; score: number; rackValue: number }[];
-  } | null>(null);
+  const [gameEnded, setGameEnded] = useState<GameEndedData | null>(null);
 
   useEffect(() => {
-    socket.on("game:ended", (data: { winnerId: string; winnerName: string; scores: { playerId: string; name: string; score: number; rackValue: number }[] }) => {
+    function onGameEnded(data: GameEndedData) {
       setGameEnded(data);
-    });
-    return () => { socket.off("game:ended"); };
+    }
+    socket.on("game:ended", onGameEnded);
+    return () => {
+      socket.off("game:ended", onGameEnded);
+    };
   }, []);
 
+  useEffect(() => {
+    if (gameEnded && gameState && gameState.phase === "playing") {
+      setGameEnded(null);
+    }
+  }, [gameState]);
+
   if (!gameState || !playerId) {
+    const savedPlayerId = localStorage.getItem("rummikub_playerId");
+    const savedGameCode = localStorage.getItem("rummikub_gameCode");
+    if (savedPlayerId && savedGameCode && !socket.connected) {
+      socket.connect();
+      socket.emit("game:reconnect", { gameCode: savedGameCode, playerId: savedPlayerId });
+    }
     return <Lobby />;
   }
 

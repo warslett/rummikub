@@ -1,4 +1,4 @@
-import { test as base, expect, type Browser, type BrowserContext } from "@playwright/test";
+import { test as base, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 
 type PlayerFixture = {
   browser: Browser;
@@ -52,7 +52,24 @@ export async function getRackTileCount(page: import("@playwright/test").Page): P
 
 export async function getPoolCount(page: import("@playwright/test").Page): Promise<string> {
   const poolSection = page.locator("div.bg-gray-800.rounded-lg").filter({ hasText: "Pool:" });
-  return poolSection.locator("span.font-bold.text-amber-400").textContent() ?? "";
+  return (await poolSection.locator("span.font-bold.text-amber-400").textContent()) ?? "";
+}
+
+export interface SeedState {
+  board: { id: string; tiles: { id: string; color: string; value: number }[] }[];
+  racks: Record<string, { id: string; color: string; value: number }[]>;
+  pool: { id: string; color: string; value: number }[];
+  currentTurnPlayerId: string;
+  hasInitialMeld: Record<string, boolean>;
+}
+
+export async function seedGame(gameCode: string, state: SeedState): Promise<void> {
+  const resp = await fetch(`${SERVER_URL}/test/seed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ gameCode, state }),
+  });
+  expect(resp.ok).toBe(true);
 }
 
 export { expect };

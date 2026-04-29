@@ -2,8 +2,8 @@ import type { Color, Value } from "./constants.js";
 
 export interface Tile {
   id: string;
-  color: Color;
-  value: Value;
+  color: Color | "joker";
+  value: Value | 0;
 }
 
 export type SetType = "run" | "group";
@@ -20,9 +20,15 @@ export interface Player {
   hasInitialMeld: boolean;
   score: number;
   connected: boolean;
+  gamesWon: number;
 }
 
 export type GamePhase = "lobby" | "playing" | "ended";
+
+export interface TurnSnapshot {
+  board: TileSet[];
+  rack: Tile[];
+}
 
 export interface GameState {
   id: string;
@@ -32,13 +38,18 @@ export interface GameState {
   board: TileSet[];
   pool: Tile[];
   turnActions: TurnAction[];
+  turnSnapshot: TurnSnapshot | null;
+  roundNumber: number;
+  consecutivePasses: number;
   createdAt: number;
   lastActivityAt: number;
 }
 
 export type TurnAction =
   | { type: "placeSet"; tiles: Tile[] }
-  | { type: "draw" };
+  | { type: "draw" }
+  | { type: "manipulate" }
+  | { type: "pass" };
 
 export interface PlayerGameState {
   id: string;
@@ -54,6 +65,12 @@ export interface PlayerGameState {
   yourScore: number;
   opponentScore: number;
   hasInitialMeld: boolean;
+  hasPlayedThisTurn: boolean;
+  roundNumber: number;
+  yourGamesWon: number;
+  opponentGamesWon: number;
+  opponentConnected: boolean;
+  consecutivePasses: number;
 }
 
 export interface GameCreatedPayload {
@@ -83,6 +100,9 @@ export interface GameEndedPayload {
   winnerId: string;
   winnerName: string;
   scores: { playerId: string; name: string; score: number; rackValue: number }[];
+  roundNumber: number;
+  isStalemate: boolean;
+  gamesWon: { playerId: string; gamesWon: number }[];
 }
 
 export interface PlayerDisconnectedPayload {

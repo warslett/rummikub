@@ -1,4 +1,4 @@
-import { COLORS, VALUES, TILES_PER_COPY } from "./constants.js";
+import { COLORS, VALUES, TILES_PER_COPY, JOKER_COUNT, JOKER_COLOR, JOKER_VALUE } from "./constants.js";
 import type { Tile } from "./types.js";
 
 export function generateAllTiles(): Tile[] {
@@ -14,6 +14,13 @@ export function generateAllTiles(): Tile[] {
         });
       }
     }
+  }
+  for (let i = 1; i <= JOKER_COUNT; i++) {
+    tiles.push({
+      id: `joker-${i}`,
+      color: JOKER_COLOR,
+      value: JOKER_VALUE,
+    });
   }
   return tiles;
 }

@@ -1,10 +1,14 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { Game } from "./game";
-import { INITIAL_HAND_SIZE, INITIAL_MELD_MINIMUM, TOTAL_NUMBERED_TILES } from "@rummikub/shared";
+import { INITIAL_HAND_SIZE, INITIAL_MELD_MINIMUM, TOTAL_TILES, JOKER_PENALTY } from "@rummikub/shared";
 import type { Tile, TileSet } from "@rummikub/shared";
 
 function makeTile(color: Tile["color"], value: number, id?: string): Tile {
   return { id: id ?? `${color}-${value}-a`, color, value: value as Tile["value"] };
+}
+
+function joker(id: string): Tile {
+  return { id, color: "joker", value: 0 };
 }
 
 function makeRun(color: Tile["color"], start: number, length: number): Tile[] {
@@ -71,7 +75,7 @@ describe("Game", () => {
     it("should leave remaining tiles in the pool", () => {
       game.start();
       const dealt = INITIAL_HAND_SIZE * 2;
-      expect(game.getState().pool).toHaveLength(TOTAL_NUMBERED_TILES - dealt);
+      expect(game.getState().pool).toHaveLength(TOTAL_TILES - dealt);
     });
 
     it("should set currentTurnIndex to 0", () => {
@@ -83,6 +87,16 @@ describe("Game", () => {
       const fresh = new Game("TEST01");
       fresh.addPlayer("p1", "Alice");
       expect(() => fresh.start()).toThrow();
+    });
+
+    it("should initialize roundNumber to 1", () => {
+      game.start();
+      expect(game.getState().roundNumber).toBe(1);
+    });
+
+    it("should initialize consecutivePasses to 0", () => {
+      game.start();
+      expect(game.getState().consecutivePasses).toBe(0);
     });
   });
 
@@ -235,8 +249,29 @@ describe("Game", () => {
     });
 
     it("should advance the turn", () => {
+      game.getState().players[0].rack = [
+        makeTile("red", 10, "r10a"),
+        makeTile("red", 11, "r11a"),
+        makeTile("red", 12, "r12a"),
+      ];
+      game.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }]);
       game.endTurn("p1");
       expect(game.getState().currentTurnIndex).toBe(1);
+    });
+
+    it("should reject endTurn when no actions were taken this turn", () => {
+      expect(() => game.endTurn("p1")).toThrow();
+    });
+
+    it("should reject endTurn after undo clears all actions", () => {
+      game.getState().players[0].rack = [
+        makeTile("red", 10, "r10a"),
+        makeTile("red", 11, "r11a"),
+        makeTile("red", 12, "r12a"),
+      ];
+      game.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }]);
+      game.undoTurn("p1");
+      expect(() => game.endTurn("p1")).toThrow();
     });
 
     it("should reject if not the current player's turn", () => {
@@ -254,6 +289,27 @@ describe("Game", () => {
       game.playSets("p1", sets);
       game.endTurn("p1");
       expect(game.getState().players[0].hasInitialMeld).toBe(true);
+    });
+
+    it("should create turn snapshot on first action", () => {
+      game.getState().players[0].rack = [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")];
+      game.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }]);
+      expect(game.getState().turnSnapshot).not.toBeNull();
+      game.endTurn("p1");
+      game.drawTile("p2");
+      expect(game.getState().turnSnapshot).toBeNull();
+    });
+
+    it("should reset consecutivePasses when a play was made", () => {
+      game.getState().consecutivePasses = 1;
+      game.getState().players[0].rack = [
+        makeTile("red", 10, "r10a"),
+        makeTile("red", 11, "r11a"),
+        makeTile("red", 12, "r12a"),
+      ];
+      game.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }]);
+      game.endTurn("p1");
+      expect(game.getState().consecutivePasses).toBe(0);
     });
   });
 
@@ -290,6 +346,58 @@ describe("Game", () => {
       expect(result!.winnerScore).toBe(8);
       expect(result!.loserPenalty).toBe(-8);
     });
+
+    it("should apply joker penalty of 30 points in scoring", () => {
+      game.start();
+      const p1 = game.getState().players[0];
+      const p2 = game.getState().players[1];
+      p1.rack = [];
+      p2.rack = [joker("joker-1"), makeTile("red", 5)];
+
+      const result = game.calculateScores();
+      expect(result).not.toBeNull();
+      expect(result!.winnerScore).toBe(JOKER_PENALTY + 5);
+      expect(result!.loserPenalty).toBe(-(JOKER_PENALTY + 5));
+    });
+
+    it("should calculate stalemate scores correctly", () => {
+      game.start();
+      const p1 = game.getState().players[0];
+      const p2 = game.getState().players[1];
+      p1.rack = [makeTile("red", 3), makeTile("blue", 3)];
+      p2.rack = [makeTile("red", 10), makeTile("blue", 10)];
+
+      const result = game.calculateStalemateScores();
+      expect(result).not.toBeNull();
+      expect(result!.winnerId).toBe("p1");
+      expect(result!.winnerScore).toBe(14);
+      expect(result!.loserPenalty).toBe(-14);
+    });
+
+    it("should use joker penalty in stalemate scoring", () => {
+      game.start();
+      const p1 = game.getState().players[0];
+      const p2 = game.getState().players[1];
+      p1.rack = [makeTile("red", 3)];
+      p2.rack = [joker("joker-1")];
+
+      const result = game.calculateStalemateScores();
+      expect(result).not.toBeNull();
+      expect(result!.winnerId).toBe("p1");
+      expect(result!.loserPenalty).toBe(3 - JOKER_PENALTY);
+      expect(result!.winnerScore).toBe(-(3 - JOKER_PENALTY));
+    });
+
+    it("should handle stalemate with tied rack values", () => {
+      game.start();
+      const p1 = game.getState().players[0];
+      const p2 = game.getState().players[1];
+      p1.rack = [makeTile("red", 5)];
+      p2.rack = [makeTile("blue", 5)];
+
+      const result = game.calculateStalemateScores();
+      expect(result).toBeNull();
+    });
   });
 
   describe("getPlayerState", () => {
@@ -306,6 +414,613 @@ describe("Game", () => {
       expect(p1State.isYourTurn).toBe(true);
       const p2State = game.getPlayerState("p2");
       expect(p2State.isYourTurn).toBe(false);
+    });
+
+    it("should include roundNumber", () => {
+      game.start();
+      const state = game.getPlayerState("p1");
+      expect(state.roundNumber).toBe(1);
+    });
+
+    it("should include gamesWon", () => {
+      game.start();
+      const state = game.getPlayerState("p1");
+      expect(state.yourGamesWon).toBe(0);
+      expect(state.opponentGamesWon).toBe(0);
+    });
+
+    it("should include opponentConnected", () => {
+      game.start();
+      const state = game.getPlayerState("p1");
+      expect(state.opponentConnected).toBe(true);
+    });
+
+    it("should include hasPlayedThisTurn as false when no actions taken", () => {
+      game.start();
+      const state = game.getPlayerState("p1");
+      expect(state.hasPlayedThisTurn).toBe(false);
+    });
+
+    it("should include hasPlayedThisTurn as true after playing sets", () => {
+      game.start();
+      game.getState().players[0].rack = [
+        makeTile("red", 10, "r10a"),
+        makeTile("red", 11, "r11a"),
+        makeTile("red", 12, "r12a"),
+      ];
+      game.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }]);
+      const state = game.getPlayerState("p1");
+      expect(state.hasPlayedThisTurn).toBe(true);
+    });
+
+    it("should include hasPlayedThisTurn as false after undo clears actions", () => {
+      game.start();
+      game.getState().players[0].rack = [
+        makeTile("red", 10, "r10a"),
+        makeTile("red", 11, "r11a"),
+        makeTile("red", 12, "r12a"),
+      ];
+      game.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }]);
+      game.undoTurn("p1");
+      const state = game.getPlayerState("p1");
+      expect(state.hasPlayedThisTurn).toBe(false);
+    });
+  });
+
+  describe("turn snapshot and undo", () => {
+    beforeEach(() => {
+      game.start();
+      game.getState().players[0].rack = [
+        makeTile("red", 10, "r10a"),
+        makeTile("red", 11, "r11a"),
+        makeTile("red", 12, "r12a"),
+        makeTile("blue", 1, "b1a"),
+      ];
+      game.getState().players[1].rack = [
+        makeTile("black", 1, "bk1a"),
+      ];
+    });
+
+    it("should not have turn snapshot until first action", () => {
+      expect(game.getState().turnSnapshot).toBeNull();
+    });
+
+    it("should undo turn and revert board and rack to start-of-turn state", () => {
+      const originalRack = [...game.getState().players[0].rack];
+      const originalBoard = [...game.getState().board];
+
+      game.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }]);
+
+      expect(game.getState().board).toHaveLength(1);
+      expect(game.getState().players[0].rack).toHaveLength(1);
+
+      game.undoTurn("p1");
+
+      expect(game.getState().players[0].rack.map((t) => t.id)).toEqual(originalRack.map((t) => t.id));
+      expect(game.getState().board).toHaveLength(originalBoard.length);
+    });
+
+    it("should reject undo if not current player", () => {
+      expect(() => game.undoTurn("p2")).toThrow();
+    });
+
+    it("should undo after manipulateBoard", () => {
+      game.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }]);
+      game.endTurn("p1");
+      game.drawTile("p2");
+
+      game.getState().players[0].rack = [
+        makeTile("red", 9, "r9a"),
+      ];
+
+      const originalBoard = game.getState().board.map((s) => ({ ...s, tiles: [...s.tiles] }));
+      const originalRack = [...game.getState().players[0].rack];
+
+      game.manipulateBoard("p1", [
+        { id: "s1", tiles: [makeTile("red", 9, "r9a"), makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] },
+      ]);
+
+      game.undoTurn("p1");
+      expect(game.getState().board.map((s) => s.tiles.map((t) => t.id))).toEqual(originalBoard.map((s) => s.tiles.map((t) => t.id)));
+      expect(game.getState().players[0].rack.map((t) => t.id)).toEqual(originalRack.map((t) => t.id));
+    });
+
+    it("should handle multiple manipulations + undo", () => {
+      const preActionRack = [...game.getState().players[0].rack];
+      const preActionBoard = game.getState().board.length;
+
+      game.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }]);
+      game.undoTurn("p1");
+      expect(game.getState().players[0].rack.map((t) => t.id)).toEqual(preActionRack.map((t) => t.id));
+      expect(game.getState().board).toHaveLength(preActionBoard);
+    });
+  });
+
+  describe("manipulateBoard", () => {
+    let gameWithBoard: Game;
+
+    beforeEach(() => {
+      gameWithBoard = new Game("TEST01");
+      gameWithBoard.addPlayer("p1", "Alice");
+      gameWithBoard.addPlayer("p2", "Bob");
+      gameWithBoard.start();
+
+      gameWithBoard.getState().players[0].rack = [
+        makeTile("red", 10, "r10a"),
+        makeTile("red", 11, "r11a"),
+        makeTile("red", 12, "r12a"),
+      ];
+      gameWithBoard.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }]);
+      gameWithBoard.endTurn("p1");
+
+      gameWithBoard.getState().players[1].rack = [makeTile("black", 1, "bk1a")];
+      gameWithBoard.drawTile("p2");
+
+      gameWithBoard.getState().players[0].rack = [
+        makeTile("red", 9, "r9a"),
+        makeTile("blue", 2, "b2a"),
+        makeTile("orange", 7, "o7a"),
+      ];
+    });
+
+    it("should add a tile to extend an existing run", () => {
+      const newBoard: TileSet[] = [
+        { id: "s1", tiles: [makeTile("red", 9, "r9a"), makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] },
+      ];
+      gameWithBoard.manipulateBoard("p1", newBoard);
+      expect(gameWithBoard.getState().board[0].tiles).toHaveLength(4);
+      expect(gameWithBoard.getState().players[0].rack).toHaveLength(2);
+    });
+
+    it("should reject if resulting board has invalid sets", () => {
+      const newBoard: TileSet[] = [
+        { id: "s1", tiles: [makeTile("red", 9, "r9a"), makeTile("red", 12, "r12a")] },
+      ];
+      expect(() => gameWithBoard.manipulateBoard("p1", newBoard)).toThrow();
+    });
+
+    it("should reject if a set has fewer than 3 tiles", () => {
+      const newBoard: TileSet[] = [
+        { id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a")] },
+      ];
+      expect(() => gameWithBoard.manipulateBoard("p1", newBoard)).toThrow();
+    });
+
+    it("should reject if tiles appear that were not on the board or in player rack", () => {
+      const newBoard: TileSet[] = [
+        { id: "s1", tiles: [makeTile("black", 1, "bk1a"), makeTile("black", 2, "bk2a"), makeTile("black", 3, "bk3a")] },
+      ];
+      expect(() => gameWithBoard.manipulateBoard("p1", newBoard)).toThrow(/not available/i);
+    });
+
+    it("should reject if player has not made initial meld and tries to manipulate", () => {
+      gameWithBoard.getState().players[0].hasInitialMeld = false;
+      const newBoard: TileSet[] = [
+        { id: "s1", tiles: [makeTile("red", 9, "r9a"), makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] },
+      ];
+      expect(() => gameWithBoard.manipulateBoard("p1", newBoard)).toThrow(/initial meld/i);
+    });
+
+    it("should reject if not the current player", () => {
+      const newBoard: TileSet[] = [
+        { id: "s1", tiles: [makeTile("red", 9, "r9a"), makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] },
+      ];
+      expect(() => gameWithBoard.manipulateBoard("p2", newBoard)).toThrow();
+    });
+  });
+
+  describe("initial meld with manipulation", () => {
+    it("should reject manipulation before initial meld", () => {
+      game.start();
+      game.getState().players[0].rack = [
+        makeTile("red", 10, "r10a"),
+        makeTile("red", 11, "r11a"),
+        makeTile("red", 12, "r12a"),
+      ];
+      game.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }]);
+      game.endTurn("p1");
+
+      game.drawTile("p2");
+
+      game.getState().players[0].hasInitialMeld = false;
+      expect(() => game.manipulateBoard("p1", [])).toThrow(/initial meld/i);
+    });
+
+    it("should allow initial meld with joker counting as represented tile value", () => {
+      game.start();
+      game.getState().players[0].rack = [
+        makeTile("red", 9, "r9a"),
+        makeTile("red", 11, "r11a"),
+        joker("joker-1"),
+      ];
+      game.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 9, "r9a"), joker("joker-1"), makeTile("red", 11, "r11a")] }]);
+      game.endTurn("p1");
+      expect(game.getState().players[0].hasInitialMeld).toBe(true);
+    });
+
+    it("should allow manipulation after initial meld", () => {
+      game.start();
+      game.getState().players[0].rack = [
+        makeTile("red", 10, "r10a"),
+        makeTile("red", 11, "r11a"),
+        makeTile("red", 12, "r12a"),
+        makeTile("red", 9, "r9a"),
+      ];
+      game.getState().players[1].rack = [];
+      game.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }]);
+      game.endTurn("p1");
+      game.drawTile("p2");
+
+      expect(game.getState().players[0].hasInitialMeld).toBe(true);
+      game.getState().players[0].rack = [makeTile("red", 9, "r9a")];
+      game.manipulateBoard("p1", [
+        { id: "s1", tiles: [makeTile("red", 9, "r9a"), makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] },
+      ]);
+      expect(game.getState().board[0].tiles).toHaveLength(4);
+    });
+  });
+
+  describe("joker handling", () => {
+    it("should allow playing a joker in a run", () => {
+      game.start();
+      game.getState().players[0].rack = [
+        makeTile("red", 9, "r9a"),
+        makeTile("red", 11, "r11a"),
+        joker("joker-1"),
+      ];
+      game.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 9, "r9a"), joker("joker-1"), makeTile("red", 11, "r11a")] }]);
+      expect(game.getState().board).toHaveLength(1);
+    });
+
+    it("should allow playing a joker in a group", () => {
+      game.start();
+      game.getState().players[0].rack = [
+        makeTile("red", 7, "r7a"),
+        makeTile("black", 7, "bk7a"),
+        joker("joker-1"),
+      ];
+      game.playSets("p1", [{ id: "s1", tiles: [joker("joker-1"), makeTile("red", 7, "r7a"), makeTile("black", 7, "bk7a")] }]);
+      expect(game.getState().board).toHaveLength(1);
+    });
+
+    it("should retrieve joker by replacing with the exact tile it represents and using freed joker in new set", () => {
+      game.start();
+      game.getState().players[0].rack = [
+        makeTile("red", 9, "r9a"),
+        makeTile("red", 11, "r11a"),
+        joker("joker-1"),
+      ];
+      game.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 9, "r9a"), joker("joker-1"), makeTile("red", 11, "r11a")] }]);
+      game.endTurn("p1");
+
+      game.drawTile("p2");
+
+      game.getState().players[0].rack = [
+        makeTile("red", 10, "r10a"),
+        makeTile("blue", 5, "b5a"),
+        joker("joker-2"),
+      ];
+
+      game.manipulateBoard("p1", [
+        { id: "s1", tiles: [makeTile("red", 9, "r9a"), makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a")] },
+        { id: "s2", tiles: [joker("joker-1"), makeTile("blue", 5, "b5a"), joker("joker-2")] },
+      ]);
+
+      expect(game.getState().board).toHaveLength(2);
+      expect(game.getState().players[0].rack).toHaveLength(0);
+    });
+
+    it("should reject freed joker not used in same turn", () => {
+      game.start();
+      game.getState().players[0].rack = [
+        makeTile("red", 9, "r9a"),
+        makeTile("red", 11, "r11a"),
+        joker("joker-1"),
+      ];
+      game.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 9, "r9a"), joker("joker-1"), makeTile("red", 11, "r11a")] }]);
+      game.endTurn("p1");
+
+      game.drawTile("p2");
+
+      game.getState().players[0].rack = [
+        makeTile("red", 10, "r10a"),
+        makeTile("blue", 5, "b5a"),
+        makeTile("orange", 5, "o5a"),
+      ];
+
+      expect(() => game.manipulateBoard("p1", [
+        { id: "s1", tiles: [makeTile("red", 9, "r9a"), makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a")] },
+        { id: "s2", tiles: [makeTile("blue", 5, "b5a"), makeTile("orange", 5, "o5a"), makeTile("red", 5, "r5b")] },
+      ])).toThrow();
+    });
+
+    it("should reject joker retrieval before initial meld", () => {
+      game.start();
+      game.getState().board = [{ id: "s1", tiles: [makeTile("red", 9, "r9a"), joker("joker-1"), makeTile("red", 11, "r11a")] }];
+      game.getState().players[0].hasInitialMeld = false;
+      game.getState().players[0].rack = [makeTile("red", 10, "r10a")];
+
+      expect(() => game.manipulateBoard("p1", [
+        { id: "s1", tiles: [makeTile("red", 9, "r9a"), makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a")] },
+      ])).toThrow(/initial meld/i);
+    });
+
+    it("should reject joker retrieval when no rack tile played this turn", () => {
+      game.start();
+      game.getState().board = [
+        { id: "s1", tiles: [joker("joker-1"), makeTile("red", 5, "r5a"), makeTile("black", 5, "bk5a")] },
+        { id: "s2", tiles: [makeTile("blue", 3, "b3a"), makeTile("blue", 4, "b4a"), makeTile("blue", 5, "b5a")] },
+      ];
+      game.getState().players[0].hasInitialMeld = true;
+      game.getState().players[0].rack = [
+        makeTile("orange", 1, "o1a"),
+      ];
+
+      expect(() => game.manipulateBoard("p1", [
+        { id: "s1", tiles: [makeTile("red", 5, "r5a"), makeTile("black", 5, "bk5a"), makeTile("blue", 5, "b5a")] },
+        { id: "s2", tiles: [joker("joker-1"), makeTile("blue", 3, "b3a"), makeTile("blue", 4, "b4a")] },
+      ])).toThrow(/rack tile/i);
+    });
+
+    it("should allow joker retrieval when at least one rack tile is also played", () => {
+      game.start();
+      game.getState().board = [
+        { id: "s1", tiles: [makeTile("red", 9, "r9a"), joker("joker-1"), makeTile("red", 11, "r11a")] },
+      ];
+      game.getState().players[0].hasInitialMeld = true;
+      game.getState().players[0].rack = [
+        makeTile("red", 10, "r10a"),
+        makeTile("blue", 5, "b5a"),
+        makeTile("orange", 5, "o5a"),
+      ];
+
+      game.manipulateBoard("p1", [
+        { id: "s1", tiles: [makeTile("red", 9, "r9a"), makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a")] },
+        { id: "s2", tiles: [joker("joker-1"), makeTile("blue", 5, "b5a"), makeTile("orange", 5, "o5a")] },
+      ]);
+
+      expect(game.getState().board).toHaveLength(2);
+      expect(game.getState().players[0].rack).toHaveLength(0);
+    });
+  });
+
+  describe("stalemate detection", () => {
+    beforeEach(() => {
+      game.start();
+    });
+
+    it("should reject passTurn when pool is not empty", () => {
+      expect(() => game.passTurn("p1")).toThrow(/pool.*empty/i);
+    });
+
+    it("should allow passTurn when pool is empty", () => {
+      game.getState().pool = [];
+      game.passTurn("p1");
+      expect(game.getState().currentTurnIndex).toBe(1);
+    });
+
+    it("should increment consecutivePasses on pass", () => {
+      game.getState().pool = [];
+      game.passTurn("p1");
+      expect(game.getState().consecutivePasses).toBe(1);
+    });
+
+    it("should end game when both players pass consecutively", () => {
+      game.getState().pool = [];
+      game.passTurn("p1");
+      game.passTurn("p2");
+      expect(game.getState().phase).toBe("ended");
+    });
+
+    it("should not end game on single pass", () => {
+      game.getState().pool = [];
+      game.passTurn("p1");
+      expect(game.getState().phase).toBe("playing");
+    });
+
+    it("should reset consecutive pass counter when a draw is made", () => {
+      game.getState().pool = [];
+      game.passTurn("p1");
+      expect(game.getState().consecutivePasses).toBe(1);
+
+      game.getState().pool = [makeTile("red", 1)];
+      game.drawTile("p2");
+      expect(game.getState().consecutivePasses).toBe(0);
+    });
+  });
+
+  describe("cumulative scoring and play again", () => {
+    beforeEach(() => {
+      game.start();
+    });
+
+    it("should start new round and reset board and pool", () => {
+      game.getState().players[0].rack = [];
+      game.getState().players[1].rack = [makeTile("red", 5)];
+      game.checkGameEnd();
+      game.calculateScores();
+      game.startNewRound();
+      expect(game.getState().phase).toBe("playing");
+      expect(game.getState().board).toHaveLength(0);
+      expect(game.getState().pool.length).toBeGreaterThan(0);
+    });
+
+    it("should preserve cumulative scores across rounds", () => {
+      game.getState().players[0].rack = [];
+      game.getState().players[1].rack = [makeTile("red", 5)];
+      game.checkGameEnd();
+      const scores = game.calculateScores()!;
+      game.getState().players[0].score += scores.winnerScore;
+      game.getState().players[1].score += scores.loserPenalty;
+      const p1ScoreBefore = game.getState().players[0].score;
+      const p2ScoreBefore = game.getState().players[1].score;
+      game.startNewRound();
+      expect(game.getState().players[0].score).toBe(p1ScoreBefore);
+      expect(game.getState().players[1].score).toBe(p2ScoreBefore);
+    });
+
+    it("should increment gamesWon for the winner", () => {
+      game.getState().players[0].rack = [];
+      const endResult = game.checkGameEnd();
+      if (endResult) {
+        const winner = game.getState().players.find((p) => p.id === endResult.winnerId);
+        if (winner) winner.gamesWon++;
+      }
+      game.startNewRound();
+      expect(game.getState().players[0].gamesWon).toBe(1);
+      expect(game.getState().players[1].gamesWon).toBe(0);
+    });
+
+    it("should deal 14 tiles to each player in new round", () => {
+      game.getState().players[0].rack = [];
+      game.checkGameEnd();
+      game.startNewRound();
+      for (const player of game.getState().players) {
+        expect(player.rack).toHaveLength(INITIAL_HAND_SIZE);
+      }
+    });
+
+    it("should reset hasInitialMeld for all players", () => {
+      game.getState().players[0].rack = [];
+      game.getState().players[0].hasInitialMeld = true;
+      game.checkGameEnd();
+      game.startNewRound();
+      for (const player of game.getState().players) {
+        expect(player.hasInitialMeld).toBe(false);
+      }
+    });
+
+    it("should increment roundNumber", () => {
+      game.getState().players[0].rack = [];
+      game.checkGameEnd();
+      game.startNewRound();
+      expect(game.getState().roundNumber).toBe(2);
+    });
+  });
+
+  describe("reconnection", () => {
+    beforeEach(() => {
+      game.start();
+    });
+
+    it("should mark player as connected on reconnect", () => {
+      game.getState().players[0].connected = false;
+      game.reconnectPlayer("p1");
+      expect(game.getState().players[0].connected).toBe(true);
+    });
+
+    it("should reject reconnection for unknown player", () => {
+      expect(() => game.reconnectPlayer("p99")).toThrow();
+    });
+  });
+
+  describe("endTurnWithBoard", () => {
+    let gameWithBoard: Game;
+
+    beforeEach(() => {
+      gameWithBoard = new Game("TEST01");
+      gameWithBoard.addPlayer("p1", "Alice");
+      gameWithBoard.addPlayer("p2", "Bob");
+      gameWithBoard.start();
+
+      gameWithBoard.getState().players[0].rack = [
+        makeTile("red", 10, "r10a"),
+        makeTile("red", 11, "r11a"),
+        makeTile("red", 12, "r12a"),
+      ];
+      gameWithBoard.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }]);
+      gameWithBoard.endTurn("p1");
+
+      gameWithBoard.drawTile("p2");
+
+      gameWithBoard.getState().players[0].rack = [
+        makeTile("red", 9, "r9a"),
+        makeTile("blue", 2, "b2a"),
+      ];
+    });
+
+    it("should manipulate board and end turn atomically", () => {
+      const newBoard: TileSet[] = [
+        { id: "s1", tiles: [makeTile("red", 9, "r9a"), makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] },
+      ];
+      gameWithBoard.endTurnWithBoard("p1", newBoard);
+      expect(gameWithBoard.getState().board[0].tiles).toHaveLength(4);
+      expect(gameWithBoard.getState().currentTurnIndex).toBe(1);
+      expect(gameWithBoard.getState().players[0].rack).toHaveLength(1);
+    });
+
+    it("should reject invalid board without ending turn", () => {
+      const invalidBoard: TileSet[] = [
+        { id: "s1", tiles: [makeTile("red", 9, "r9a"), makeTile("red", 12, "r12a")] },
+      ];
+      expect(() => gameWithBoard.endTurnWithBoard("p1", invalidBoard)).toThrow();
+      expect(gameWithBoard.getState().currentTurnIndex).toBe(0);
+    });
+
+    it("should reject manipulation before initial meld without ending turn", () => {
+      gameWithBoard.getState().players[0].hasInitialMeld = false;
+      const newBoard: TileSet[] = [
+        { id: "s1", tiles: [makeTile("red", 9, "r9a"), makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] },
+      ];
+      expect(() => gameWithBoard.endTurnWithBoard("p1", newBoard)).toThrow(/initial meld/i);
+      expect(gameWithBoard.getState().currentTurnIndex).toBe(0);
+    });
+
+    it("should work without newBoard like regular endTurn", () => {
+      gameWithBoard.getState().players[0].rack = [
+        makeTile("red", 9, "r9a"),
+        makeTile("blue", 2, "b2a"),
+        makeTile("orange", 7, "o7a"),
+      ];
+      gameWithBoard.manipulateBoard("p1", [
+        { id: "s1", tiles: [makeTile("red", 9, "r9a"), makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] },
+      ]);
+      gameWithBoard.endTurnWithBoard("p1");
+      expect(gameWithBoard.getState().currentTurnIndex).toBe(1);
+    });
+  });
+
+  describe("seedGame", () => {
+    it("should set board, racks, pool, and phase", () => {
+      game.start();
+      game.seedGame({
+        board: [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }],
+        racks: {
+          p1: [makeTile("red", 9, "r9a")],
+          p2: [makeTile("blue", 5, "b5a")],
+        },
+        pool: [],
+        currentTurnPlayerId: "p1",
+        hasInitialMeld: { p1: true, p2: true },
+      });
+      expect(game.getState().board).toHaveLength(1);
+      expect(game.getState().players[0].rack).toHaveLength(1);
+      expect(game.getState().players[1].rack).toHaveLength(1);
+      expect(game.getState().pool).toHaveLength(0);
+      expect(game.getState().currentTurnIndex).toBe(0);
+      expect(game.getState().players[0].hasInitialMeld).toBe(true);
+      expect(game.getState().players[1].hasInitialMeld).toBe(true);
+    });
+
+    it("should set correct current turn by player ID", () => {
+      game.start();
+      game.seedGame({
+        board: [],
+        racks: { p1: [], p2: [] },
+        pool: [],
+        currentTurnPlayerId: "p2",
+        hasInitialMeld: { p1: true, p2: true },
+      });
+      expect(game.getState().currentTurnIndex).toBe(1);
+    });
+  });
+
+  describe("player rack value with jokers", () => {
+    it("should calculate rack value with joker penalty", () => {
+      game.start();
+      game.getState().players[0].rack = [makeTile("red", 5), joker("joker-1")];
+      const value = game.getRackValue("p1");
+      expect(value).toBe(5 + JOKER_PENALTY);
     });
   });
 });

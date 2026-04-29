@@ -1,6 +1,7 @@
 import { Server as SocketIOServer } from "socket.io";
 import { GameManager } from "./gameManager.js";
 import type { TileSet } from "@rummikub/shared";
+import type { SeedState } from "./game.js";
 
 const manager = new GameManager();
 
@@ -66,17 +67,16 @@ export function registerHandlers(io: SocketIOServer): void {
         return;
       }
 
-      for (const player of game.getState().players) {
-        const playerState = game.getPlayerState(player.id);
-        for (const socketId of io.sockets.adapter.rooms.get(gc) ?? []) {
+      const sockets = io.sockets.adapter.rooms.get(gc);
+      if (sockets) {
+        for (const socketId of sockets) {
           const s = io.sockets.sockets.get(socketId);
-          if (s && (s.data as SocketData).playerId === player.id) {
-            s.emit("game:started", { gameState: playerState });
+          if (s) {
+            const data = s.data as SocketData;
+            s.emit("game:started", { gameState: game.getPlayerState(data.playerId) });
           }
         }
       }
-
-      emitPlayerStates(io, game, gc);
     });
 
     socket.on("turn:draw", () => {
@@ -95,17 +95,7 @@ export function registerHandlers(io: SocketIOServer): void {
 
       const endResult = game.checkGameEnd();
       if (endResult) {
-        const scores = game.calculateScores();
-        io.to(data.gameCode).emit("game:ended", {
-          winnerId: endResult.winnerId,
-          winnerName: endResult.winnerName,
-          scores: game.getState().players.map((p) => ({
-            playerId: p.id,
-            name: p.name,
-            score: p.id === endResult.winnerId ? scores!.winnerScore : scores!.loserPenalty,
-            rackValue: p.id === endResult.winnerId ? 0 : scores!.loserPenalty * -1,
-          })),
-        });
+        emitGameEnded(io, game, data.gameCode, endResult);
         return;
       }
 
@@ -129,7 +119,7 @@ export function registerHandlers(io: SocketIOServer): void {
       socket.emit("game:state", { gameState: game.getPlayerState(data.playerId) });
     });
 
-    socket.on("turn:end", () => {
+    socket.on("turn:manipulate", ({ newBoard }: { newBoard: TileSet[] }) => {
       const game = manager.getGame(data.gameCode);
       if (!game) {
         socket.emit("game:error", { message: "Game not found" });
@@ -137,7 +127,41 @@ export function registerHandlers(io: SocketIOServer): void {
       }
 
       try {
-        game.endTurn(data.playerId);
+        game.manipulateBoard(data.playerId, newBoard);
+      } catch (err) {
+        socket.emit("move:rejected", { reason: (err as Error).message });
+        return;
+      }
+
+      socket.emit("game:state", { gameState: game.getPlayerState(data.playerId) });
+    });
+
+    socket.on("turn:undo", () => {
+      const game = manager.getGame(data.gameCode);
+      if (!game) {
+        socket.emit("game:error", { message: "Game not found" });
+        return;
+      }
+
+      try {
+        game.undoTurn(data.playerId);
+      } catch (err) {
+        socket.emit("move:rejected", { reason: (err as Error).message });
+        return;
+      }
+
+      socket.emit("game:state", { gameState: game.getPlayerState(data.playerId) });
+    });
+
+    socket.on("turn:end", ({ newBoard }: { newBoard?: TileSet[] }) => {
+      const game = manager.getGame(data.gameCode);
+      if (!game) {
+        socket.emit("game:error", { message: "Game not found" });
+        return;
+      }
+
+      try {
+        game.endTurnWithBoard(data.playerId, newBoard);
       } catch (err) {
         socket.emit("move:rejected", { reason: (err as Error).message });
         return;
@@ -145,22 +169,115 @@ export function registerHandlers(io: SocketIOServer): void {
 
       const endResult = game.checkGameEnd();
       if (endResult) {
-        const scores = game.calculateScores();
-        io.to(data.gameCode).emit("game:ended", {
-          winnerId: endResult.winnerId,
-          winnerName: endResult.winnerName,
-          scores: game.getState().players.map((p) => ({
-            playerId: p.id,
-            name: p.name,
-            score: p.id === endResult.winnerId ? scores!.winnerScore : scores!.loserPenalty,
-            rackValue: p.id === endResult.winnerId ? 0 : scores!.loserPenalty * -1,
-          })),
-        });
+        emitGameEnded(io, game, data.gameCode, endResult);
         return;
       }
 
       emitPlayerStates(io, game, data.gameCode);
     });
+
+    socket.on("turn:pass", () => {
+      const game = manager.getGame(data.gameCode);
+      if (!game) {
+        socket.emit("game:error", { message: "Game not found" });
+        return;
+      }
+
+      try {
+        game.passTurn(data.playerId);
+      } catch (err) {
+        socket.emit("move:rejected", { reason: (err as Error).message });
+        return;
+      }
+
+      const state = game.getState();
+      if (state.phase === "ended") {
+        const scores = game.calculateStalemateScores();
+      if (scores) {
+        game.applyStalemateScores(scores);
+        const players = state.players;
+        const stalemateWinner = players.find((p) => p.id === scores.winnerId);
+        if (stalemateWinner) stalemateWinner.gamesWon++;
+        io.to(data.gameCode).emit("game:ended", {
+            winnerId: scores.winnerId,
+            winnerName: scores.winnerName,
+            scores: players.map((p) => ({
+              playerId: p.id,
+              name: p.name,
+              score: p.id === scores.winnerId ? scores.winnerScore : scores.loserPenalty,
+              rackValue: game.getRackValue(p.id),
+            })),
+            roundNumber: state.roundNumber,
+            isStalemate: true,
+            gamesWon: players.map((p) => ({ playerId: p.id, gamesWon: p.gamesWon })),
+          });
+        }
+        return;
+      }
+
+      emitPlayerStates(io, game, data.gameCode);
+    });
+
+    socket.on("game:playAgain", () => {
+      const game = manager.getGame(data.gameCode);
+      if (!game) {
+        socket.emit("game:error", { message: "Game not found" });
+        return;
+      }
+
+      try {
+        game.startNewRound();
+      } catch (err) {
+        socket.emit("move:rejected", { reason: (err as Error).message });
+        return;
+      }
+
+      emitPlayerStates(io, game, data.gameCode);
+    });
+
+    socket.on("game:reconnect", ({ gameCode, playerId }: { gameCode: string; playerId: string }) => {
+      const game = manager.getGame(gameCode);
+      if (!game) {
+        socket.emit("game:error", { message: "Game not found" });
+        return;
+      }
+
+      try {
+        game.reconnectPlayer(playerId);
+      } catch (err) {
+        socket.emit("game:error", { message: (err as Error).message });
+        return;
+      }
+
+      data.playerId = playerId;
+      data.gameCode = gameCode;
+      socket.join(gameCode);
+
+      socket.emit("game:state", { gameState: game.getPlayerState(playerId) });
+      socket.to(gameCode).emit("player:reconnected", {
+        playerId,
+        playerName: game.getState().players.find((p) => p.id === playerId)!.name,
+      });
+    });
+
+    if (process.env.NODE_ENV === "test") {
+      socket.on("game:seed", ({ gameCode, state }: { gameCode: string; state: SeedState }) => {
+        const game = manager.getGame(gameCode);
+        if (!game) {
+          socket.emit("game:error", { message: "Game not found" });
+          return;
+        }
+
+        try {
+          game.seedGame(state);
+        } catch (err) {
+          socket.emit("game:error", { message: (err as Error).message });
+          return;
+        }
+
+        emitPlayerStates(io, game, gameCode);
+      });
+    }
 
     socket.on("disconnect", () => {
       if (data.gameCode) {
@@ -186,10 +303,36 @@ function emitPlayerStates(io: SocketIOServer, game: ReturnType<GameManager["getG
     const sockets = io.sockets.adapter.rooms.get(gameCode);
     if (!sockets) continue;
     for (const socketId of sockets) {
-      const socket = io.sockets.sockets.get(socketId);
-      if (socket && (socket.data as SocketData).playerId === player.id) {
-        socket.emit("game:state", { gameState: game.getPlayerState(player.id) });
+      const s = io.sockets.sockets.get(socketId);
+      if (s && (s.data as SocketData).playerId === player.id) {
+        s.emit("game:state", { gameState: game.getPlayerState(player.id) });
       }
     }
   }
 }
+
+function emitGameEnded(io: SocketIOServer, game: ReturnType<GameManager["getGame"]>, gameCode: string, endResult: { winnerId: string; winnerName: string }): void {
+  if (!game) return;
+  const scores = game.calculateScores();
+  const state = game.getState();
+  if (scores) {
+    game.applyScores(scores);
+    const winner = state.players.find((p) => p.id === endResult.winnerId);
+    if (winner) winner.gamesWon++;
+    io.to(gameCode).emit("game:ended", {
+      winnerId: endResult.winnerId,
+      winnerName: endResult.winnerName,
+      scores: state.players.map((p) => ({
+        playerId: p.id,
+        name: p.name,
+        score: p.id === endResult.winnerId ? scores.winnerScore : scores.loserPenalty,
+        rackValue: p.id === endResult.winnerId ? 0 : game.getRackValue(p.id),
+      })),
+      roundNumber: state.roundNumber,
+      isStalemate: false,
+      gamesWon: state.players.map((p) => ({ playerId: p.id, gamesWon: p.gamesWon })),
+    });
+  }
+}
+
+export { manager };

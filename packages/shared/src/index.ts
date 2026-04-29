@@ -1,16 +1,21 @@
-export { isValidRun, isValidGroup, isValidSet, calculateSetValue } from "./validation.js";
+export { isValidRun, isValidGroup, isValidSet, isValidBoard, calculateSetValue, resolveJokerValue, formSetsFromTiles } from "./validation.js";
 export { generateAllTiles, shuffleTiles } from "./tiles.js";
 export {
   COLORS,
   VALUES,
   TILES_PER_COPY,
   TOTAL_NUMBERED_TILES,
+  TOTAL_TILES,
   INITIAL_HAND_SIZE,
   INITIAL_MELD_MINIMUM,
   MIN_SET_SIZE,
   MAX_GROUP_SIZE,
   GAME_CODE_LENGTH,
   GAME_CODE_CHARS,
+  JOKER_VALUE,
+  JOKER_COLOR,
+  JOKER_PENALTY,
+  JOKER_COUNT,
 } from "./constants.js";
 export type { Color, Value } from "./constants.js";
 export type {
@@ -21,6 +26,7 @@ export type {
   GamePhase,
   GameState,
   TurnAction,
+  TurnSnapshot,
   PlayerGameState,
   GameCreatedPayload,
   GameJoinedPayload,

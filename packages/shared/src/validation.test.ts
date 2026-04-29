@@ -1,9 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { isValidRun, isValidGroup, isValidSet, calculateSetValue } from "./validation";
-import type { Tile } from "./types";
+import { isValidRun, isValidGroup, isValidSet, isValidBoard, calculateSetValue, resolveJokerValue, formSetsFromTiles } from "./validation";
+import type { Tile, TileSet } from "./types";
 
 function tile(color: Tile["color"], value: number, id?: string): Tile {
   return { id: id ?? `${color}-${value}-a`, color, value: value as Tile["value"] };
+}
+
+function joker(id: string): Tile {
+  return { id, color: "joker", value: 0 };
 }
 
 describe("isValidRun", () => {
@@ -51,6 +55,46 @@ describe("isValidRun", () => {
     const tiles = [tile("red", 5), tile("red", 3), tile("red", 4)];
     expect(isValidRun(tiles)).toBe(false);
   });
+
+  it("should accept a run with joker in the middle", () => {
+    const tiles = [tile("red", 3), joker("joker-1"), tile("red", 5)];
+    expect(isValidRun(tiles)).toBe(true);
+  });
+
+  it("should accept a run with joker at start", () => {
+    const tiles = [joker("joker-1"), tile("red", 4), tile("red", 5)];
+    expect(isValidRun(tiles)).toBe(true);
+  });
+
+  it("should accept a run with joker at end", () => {
+    const tiles = [tile("red", 3), tile("red", 4), joker("joker-1")];
+    expect(isValidRun(tiles)).toBe(true);
+  });
+
+  it("should accept a run with two jokers", () => {
+    const tiles = [tile("red", 3), joker("joker-1"), joker("joker-2"), tile("red", 6)];
+    expect(isValidRun(tiles)).toBe(true);
+  });
+
+  it("should reject a run where joker would need value > 13", () => {
+    const tiles = [tile("red", 12), tile("red", 13), joker("joker-1")];
+    expect(isValidRun(tiles)).toBe(false);
+  });
+
+  it("should reject a run where joker would need value < 1", () => {
+    const tiles = [joker("joker-1"), tile("red", 1), tile("red", 2)];
+    expect(isValidRun(tiles)).toBe(false);
+  });
+
+  it("should reject two jokers that cannot both fit in the run", () => {
+    const tiles = [tile("red", 12), joker("joker-1"), joker("joker-2"), tile("red", 13)];
+    expect(isValidRun(tiles)).toBe(false);
+  });
+
+  it("should accept a run with two jokers at start", () => {
+    const tiles = [joker("joker-1"), joker("joker-2"), tile("red", 3)];
+    expect(isValidRun(tiles)).toBe(true);
+  });
 });
 
 describe("isValidGroup", () => {
@@ -83,6 +127,26 @@ describe("isValidGroup", () => {
     const tiles = [tile("red", 7), tile("blue", 8), tile("black", 7)];
     expect(isValidGroup(tiles)).toBe(false);
   });
+
+  it("should accept a group with a joker", () => {
+    const tiles = [tile("red", 7), joker("joker-1"), tile("black", 7)];
+    expect(isValidGroup(tiles)).toBe(true);
+  });
+
+  it("should accept a group with two jokers and one real tile", () => {
+    const tiles = [tile("red", 7), joker("joker-1"), joker("joker-2")];
+    expect(isValidGroup(tiles)).toBe(true);
+  });
+
+  it("should accept a group with two jokers and two real tiles", () => {
+    const tiles = [tile("red", 7), tile("blue", 7), joker("joker-1"), joker("joker-2")];
+    expect(isValidGroup(tiles)).toBe(true);
+  });
+
+  it("should reject a group where joker would create duplicate color", () => {
+    const tiles = [tile("red", 7), tile("red", 7, "red-7-b"), joker("joker-1")];
+    expect(isValidGroup(tiles)).toBe(false);
+  });
 });
 
 describe("isValidSet", () => {
@@ -100,6 +164,52 @@ describe("isValidSet", () => {
     const tiles = [tile("red", 3), tile("blue", 7), tile("black", 10)];
     expect(isValidSet(tiles)).toBe(false);
   });
+
+  it("should accept a run with joker", () => {
+    const tiles = [tile("red", 3), joker("joker-1"), tile("red", 5)];
+    expect(isValidSet(tiles)).toBe(true);
+  });
+
+  it("should accept a group with joker", () => {
+    const tiles = [tile("red", 7), joker("joker-1"), tile("black", 7)];
+    expect(isValidSet(tiles)).toBe(true);
+  });
+});
+
+describe("isValidBoard", () => {
+  it("should return true when all sets are valid", () => {
+    const board: TileSet[] = [
+      { id: "s1", tiles: [tile("red", 3), tile("red", 4), tile("red", 5)] },
+      { id: "s2", tiles: [tile("blue", 7), tile("orange", 7), tile("black", 7)] },
+    ];
+    expect(isValidBoard(board)).toBe(true);
+  });
+
+  it("should return false when any set is invalid", () => {
+    const board: TileSet[] = [
+      { id: "s1", tiles: [tile("red", 3), tile("red", 4), tile("red", 5)] },
+      { id: "s2", tiles: [tile("blue", 7), tile("blue", 7, "blue-7-b")] },
+    ];
+    expect(isValidBoard(board)).toBe(false);
+  });
+
+  it("should return true for an empty board", () => {
+    expect(isValidBoard([])).toBe(true);
+  });
+
+  it("should return true for a board with joker sets", () => {
+    const board: TileSet[] = [
+      { id: "s1", tiles: [tile("red", 3), joker("joker-1"), tile("red", 5)] },
+    ];
+    expect(isValidBoard(board)).toBe(true);
+  });
+
+  it("should return false when a set has fewer than 3 tiles", () => {
+    const board: TileSet[] = [
+      { id: "s1", tiles: [tile("red", 3), tile("red", 4)] },
+    ];
+    expect(isValidBoard(board)).toBe(false);
+  });
 });
 
 describe("calculateSetValue", () => {
@@ -111,5 +221,147 @@ describe("calculateSetValue", () => {
   it("should sum values for a group", () => {
     const tiles = [tile("red", 5), tile("blue", 5), tile("black", 5)];
     expect(calculateSetValue(tiles)).toBe(15);
+  });
+
+  it("should count joker as its resolved value in a run", () => {
+    const tiles = [tile("red", 9), joker("joker-1"), tile("red", 11)];
+    expect(calculateSetValue(tiles)).toBe(30);
+  });
+
+  it("should count joker as its resolved value in a group", () => {
+    const tiles = [tile("red", 7), joker("joker-1"), tile("black", 7)];
+    expect(calculateSetValue(tiles)).toBe(21);
+  });
+});
+
+describe("resolveJokerValue", () => {
+  it("should resolve joker in the middle of a run", () => {
+    const tiles = [tile("red", 3), joker("joker-1"), tile("red", 5)];
+    expect(resolveJokerValue(tiles[1], tiles)).toBe(4);
+  });
+
+  it("should resolve joker at the start of a run", () => {
+    const tiles = [joker("joker-1"), tile("red", 4), tile("red", 5)];
+    expect(resolveJokerValue(tiles[0], tiles)).toBe(3);
+  });
+
+  it("should resolve joker at the end of a run", () => {
+    const tiles = [tile("red", 3), tile("red", 4), joker("joker-1")];
+    expect(resolveJokerValue(tiles[2], tiles)).toBe(5);
+  });
+
+  it("should resolve joker in a group", () => {
+    const tiles = [joker("joker-1"), tile("black", 5), tile("orange", 5)];
+    expect(resolveJokerValue(tiles[0], tiles)).toBe(5);
+  });
+
+  it("should return 0 for non-joker tile", () => {
+    const tiles = [tile("red", 3), tile("red", 4), tile("red", 5)];
+    expect(resolveJokerValue(tiles[0], tiles)).toBe(0);
+  });
+
+  it("should resolve ambiguous set as group when tiles have same value different colors", () => {
+    const tiles = [tile("red", 5), joker("joker-1"), tile("black", 5)];
+    expect(resolveJokerValue(tiles[1], tiles)).toBe(5);
+  });
+
+  it("should prefer group interpretation for [red-5, joker, black-5]", () => {
+    const tiles = [tile("red", 5), joker("joker-1"), tile("black", 5)];
+    expect(resolveJokerValue(tiles[1], tiles)).toBe(5);
+  });
+
+  it("should resolve joker in a 4-tile group", () => {
+    const tiles = [tile("red", 5), joker("joker-1"), tile("black", 5), tile("orange", 5)];
+    expect(resolveJokerValue(tiles[1], tiles)).toBe(5);
+  });
+
+  it("should return 0 when joker is in an invalid set", () => {
+    const tiles = [joker("joker-1"), tile("red", 5)];
+    expect(resolveJokerValue(tiles[0], tiles)).toBe(0);
+  });
+});
+
+describe("formSetsFromTiles", () => {
+  it("should form a run from consecutive same-color tiles", () => {
+    const tiles = [tile("red", 3), tile("red", 4), tile("red", 5)];
+    const sets = formSetsFromTiles(tiles);
+    expect(sets).toHaveLength(1);
+    expect(sets[0].tiles).toHaveLength(3);
+  });
+
+  it("should form a group from same-value different-color tiles", () => {
+    const tiles = [tile("red", 7), tile("blue", 7), tile("black", 7)];
+    const sets = formSetsFromTiles(tiles);
+    expect(sets).toHaveLength(1);
+    expect(sets[0].tiles).toHaveLength(3);
+  });
+
+  it("should return empty for tiles that don't form valid sets", () => {
+    const tiles = [tile("red", 3), tile("blue", 7), tile("black", 10)];
+    const sets = formSetsFromTiles(tiles);
+    expect(sets).toHaveLength(0);
+  });
+
+  it("should form a run with joker filling a gap", () => {
+    const tiles = [tile("red", 10), joker("j1"), tile("red", 12)];
+    const sets = formSetsFromTiles(tiles);
+    expect(sets).toHaveLength(1);
+    expect(sets[0].tiles).toHaveLength(3);
+    expect(isValidRun(sets[0].tiles)).toBe(true);
+  });
+
+  it("should form a run with joker at the start", () => {
+    const tiles = [joker("j1"), tile("red", 11), tile("red", 12)];
+    const sets = formSetsFromTiles(tiles);
+    expect(sets).toHaveLength(1);
+    expect(isValidRun(sets[0].tiles)).toBe(true);
+  });
+
+  it("should form a run with joker at the end", () => {
+    const tiles = [tile("red", 12), tile("red", 13), joker("j1")];
+    const sets = formSetsFromTiles(tiles);
+    expect(sets).toHaveLength(1);
+    expect(isValidRun(sets[0].tiles)).toBe(true);
+  });
+
+  it("should form a group with joker as wildcard", () => {
+    const tiles = [tile("red", 7), joker("j1"), tile("black", 7)];
+    const sets = formSetsFromTiles(tiles);
+    expect(sets).toHaveLength(1);
+    expect(isValidGroup(sets[0].tiles)).toBe(true);
+  });
+
+  it("should form a group with two jokers", () => {
+    const tiles = [tile("red", 7), joker("j1"), joker("j2")];
+    const sets = formSetsFromTiles(tiles);
+    expect(sets).toHaveLength(1);
+    expect(isValidGroup(sets[0].tiles)).toBe(true);
+  });
+
+  it("should form a run from unsorted tiles with joker", () => {
+    const tiles = [tile("red", 13), tile("red", 12), joker("j1")];
+    const sets = formSetsFromTiles(tiles);
+    expect(sets).toHaveLength(1);
+    expect(isValidRun(sets[0].tiles)).toBe(true);
+  });
+
+  it("should form a run with joker inserted between non-consecutive tiles", () => {
+    const tiles = [tile("red", 9), tile("red", 11), joker("j1")];
+    const sets = formSetsFromTiles(tiles);
+    expect(sets).toHaveLength(1);
+    expect(isValidRun(sets[0].tiles)).toBe(true);
+  });
+
+  it("should return empty when joker cannot bridge the gap", () => {
+    const tiles = [tile("red", 1), tile("red", 5), joker("j1")];
+    const sets = formSetsFromTiles(tiles);
+    expect(sets).toHaveLength(0);
+  });
+
+  it("should handle two jokers in a run", () => {
+    const tiles = [tile("red", 3), tile("red", 6), joker("j1"), joker("j2")];
+    const sets = formSetsFromTiles(tiles);
+    expect(sets).toHaveLength(1);
+    expect(isValidRun(sets[0].tiles)).toBe(true);
   });
 });

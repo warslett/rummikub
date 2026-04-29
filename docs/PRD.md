@@ -6,75 +6,7 @@ A virtual, online Rummikub game that allows two players to play against each oth
 
 ## 2. Rummikub Rules (Sabra Variant)
 
-### 2.1 Game Components
-
-- **106 tiles total**: 104 numbered tiles + 2 joker tiles
-- Numbered tiles: values 1-13 in 4 colors (blue, red, orange, black), 2 copies of each
-- Jokers: 2 wild tiles that can substitute for any tile
-
-### 2.2 Setup
-
-1. All tiles are shuffled and placed face-down (the "pool")
-2. Each player draws 14 tiles and places them on their rack (hidden from opponent)
-3. The player with the highest-value drawn tile goes first
-4. Play proceeds clockwise (alternating turns for 2 players)
-
-### 2.3 Valid Sets
-
-All tiles on the board must be arranged in sets of **at least 3 tiles**. Two types:
-
-- **Run**: 3+ consecutive numbers of the same color (e.g., blue 3-4-5-6). A 1 may not follow a 13.
-- **Group**: 3-4 tiles of the same value in distinct colors (e.g., red 7, blue 7, black 7). Colors may not repeat in a group.
-
-### 2.4 Initial Meld
-
-- A player's first play of the game must be a valid set (or sets) from their own rack totaling **at least 30 points**
-- Jokers in the initial meld assume the value of the tile they replace
-- A player may NOT use tiles already on the board for their initial meld
-- If a player cannot make an initial meld, they must draw one tile from the pool and their turn ends
-
-### 2.5 Subsequent Turns
-
-After making their initial meld, a player may on their turn:
-
-- Play one or more tiles from their rack to form new sets
-- Add tiles to existing sets on the board
-- **Manipulate** existing sets on the board (see 2.6)
-- Combine any of the above actions
-
-If a player cannot or chooses not to play, they must draw one tile from the pool and their turn ends.
-
-### 2.6 Manipulating Existing Sets
-
-A core Rummikub mechanic. During a turn, a player may rearrange tiles already on the board:
-
-- **Shifting a run**: Add a tile to one end of a run and remove a tile from the other end for use elsewhere
-- **Splitting a run**: Split a long run and insert matching tiles in the middle (e.g., blue 6-7-8-9-10 split with own 8 to make 6-7-8 and 8-9-10)
-- **Substituting in a group**: Replace a tile in a 3-tile group with the fourth color of the same value, taking the replaced tile for use elsewhere
-- **Removing tiles**: Remove a tile from the end of a run (remaining tiles must still form a valid run), or remove any one tile from a 4-tile group
-- **Joker substitution**: Replace a joker in a set with the tile it represents (same value and color). The freed joker must be used in the same turn as part of a new set. A joker cannot be retrieved before the initial meld.
-
-**Critical rule**: At the end of a player's turn, ALL tiles on the board must form valid sets. Any tile "harvested" from an existing set must be played during that turn - it cannot be kept for later.
-
-### 2.7 Invalid Moves
-
-- Server will validate all moves and prevent invalid states
-- A move is invalid if it would leave any set on the board with fewer than 3 tiles
-- A move is invalid if it would leave tiles not part of any valid set
-- A move is invalid if a player tries to play tiles before making their initial meld (30+ point requirement)
-- The server rejects invalid moves and the player's turn continues (they must make a valid move or draw)
-
-### 2.8 Winning
-
-- A player wins by placing all tiles from their rack onto the board, declaring "Rummikub!"
-- If the pool is exhausted and no player can make a valid move, the player with the fewest tiles in their rack wins
-
-### 2.9 Scoring
-
-- **Winner**: Receives the sum of all other players' remaining tile values (added to cumulative score)
-- **Losers**: Subtract the total value of tiles remaining in their rack from their cumulative score
-- **Joker penalty**: A joker remaining in a player's rack counts as 30 points
-- If a player never made their initial meld, their remaining tile values are added to every other player's score, and the highest cumulative score wins
+The official Rummikub rules are maintained in [rules.md](rules.md) as the single source of truth. Refer to that document for all rule definitions, including: game components, setup, valid sets, initial meld, manipulation, jokers, scoring, and time limits.
 
 ## 3. Functional Requirements
 
@@ -106,6 +38,7 @@ A core Rummikub mechanic. During a turn, a player may rearrange tiles already on
 | F-17 | The pool tile count is visible to both players |
 | F-18 | When a player places their last tile, the game ends and they are declared the winner |
 | F-19 | If the pool is empty and no player can make a valid move, the game ends and the player with fewest tiles wins |
+| F-19.1 | Stalemate: when the pool is empty, a player may pass their turn; two consecutive passes end the game and the player with the lowest rack value wins (jokers count as 30 points) |
 | F-20 | The turn alternates between players automatically |
 
 ### 3.3 Scoring & Results
@@ -208,8 +141,11 @@ A core Rummikub mechanic. During a turn, a player may rearrange tiles already on
 | `game:start` | `{ gameCode }` | Signal readiness to start |
 | `turn:draw` | `{}` | Draw a tile from the pool |
 | `turn:play` | `{ actions: Action[] }` | Submit a set of tile actions |
-| `turn:end` | `{}` | End turn (confirm board state) |
+| `turn:manipulate` | `{ newBoard: TileSet[] }` | Submit manipulated board state |
+| `turn:end` | `{ newBoard?: TileSet[] }` | End turn (confirm board state; optional newBoard for inline manipulation) |
 | `turn:undo` | `{}` | Undo all moves made this turn |
+| `turn:pass` | `{}` | Pass turn when pool is empty (contributes to stalemate detection) |
+| `game:playAgain` | `{}` | Start a new round after game ends (scores persist) |
 
 #### Server → Client Events
 
@@ -218,10 +154,10 @@ A core Rummikub mechanic. During a turn, a player may rearrange tiles already on
 | `game:created` | `{ gameCode, gameUrl, playerId }` | Game created confirmation |
 | `game:joined` | `{ playerId, opponentName }` | Opponent joined |
 | `game:started` | `{ gameState }` | Game begins |
-| `game:state` | `{ board, pool, yourRack, opponentRackSize, scores, currentTurn }` | Full state update |
+| `game:state` | `{ board, pool, yourRack, opponentRackSize, scores, currentTurn, hasPlayedThisTurn, roundNumber, yourGamesWon, opponentGamesWon, opponentConnected, consecutivePasses }` | Full state update |
 | `game:turn` | `{ player }` | It's a player's turn |
 | `move:rejected` | `{ reason }` | Move was invalid |
-| `game:ended` | `{ winner, scores }` | Game over |
+| `game:ended` | `{ winner, scores, roundNumber, isStalemate, gamesWon }` | Game over |
 | `player:disconnected` | `{ player }` | Opponent disconnected |
 | `player:reconnected` | `{ player }` | Opponent reconnected |
 | `game:error` | `{ message }` | Generic error |
@@ -231,7 +167,7 @@ A core Rummikub mechanic. During a turn, a player may rearrange tiles already on
 ```
 rummikub/
 ├── docs/
-│   └── PRD.md
+│   └── prd.md
 ├── packages/
 │   ├── shared/              # Shared types, constants, validation
 │   │   ├── src/
@@ -280,13 +216,15 @@ interface Tile {
   value: number;     // 1-13, or 0 for jokers
 }
 
-// Note: Phase 1 excludes jokers. The 'joker' color and value 0 are defined
-// in the type for forward compatibility but are not generated in tile sets.
-
 interface TileSet {
   id: string;
   type: 'run' | 'group';
   tiles: Tile[];
+}
+
+interface TurnSnapshot {
+  board: TileSet[];
+  rack: Tile[];
 }
 
 interface Player {
@@ -296,6 +234,7 @@ interface Player {
   hasInitialMeld: boolean;
   score: number;
   connected: boolean;
+  gamesWon: number;
 }
 
 type GamePhase = 'lobby' | 'playing' | 'ended';
@@ -307,15 +246,24 @@ interface GameState {
   currentTurnIndex: number;
   board: TileSet[];         // All sets on the board
   pool: Tile[];             // Remaining tiles to draw
-  turnActions: Action[];    // Actions taken this turn (for undo)
+  turnActions: TurnAction[];// Actions taken this turn (for undo)
+  turnSnapshot: TurnSnapshot | null; // Snapshot at turn start for undo
+  roundNumber: number;      // Current round (increments on Play Again)
+  consecutivePasses: number;// Tracks passes for stalemate detection
   createdAt: number;        // Timestamp
   lastActivityAt: number;   // For expiry
 }
+
+type TurnAction =
+  | { type: 'placeSet'; tiles: Tile[] }
+  | { type: 'draw' }
+  | { type: 'manipulate' }
+  | { type: 'pass' };
 ```
 
 ### 5.6 Key Design Decisions
 
-1. **Turn-based action model**: On their turn, a player submits a series of actions (place tile, move tile, etc.). The server validates the entire turn's result before committing. The client provides an "undo" function to revert uncommitted actions within the current turn.
+1. **Turn-based action model**: On their turn, a player submits a series of actions (place tile, manipulate board, etc.). The server validates the entire turn's result before committing. The client provides an "undo" function to revert uncommitted actions within the current turn via a turn snapshot captured at turn start.
 
 2. **Separate rack state from board state**: The player's rack is never sent to the opponent. The opponent only knows the rack size.
 
@@ -326,6 +274,10 @@ interface GameState {
 5. **No database**: All state in memory for MVP. A Map<string, GameState> in the server process.
 
 6. **Spectator via same room**: Spectators join the Socket.IO room but receive a filtered state (no rack data).
+
+7. **Board manipulation**: Players submit the entire resulting board state; the server validates all sets are valid and that no tiles appeared from nowhere. Joker retrieval requires playing at least one rack tile.
+
+8. **Stalemate via consecutive passes**: When the pool is empty, a player may pass their turn. Two consecutive passes end the game; the player with the lowest rack value wins. Jokers in the rack count as 30 points each for this calculation.
 
 ## 6. UI/UX Design Notes
 
@@ -390,17 +342,18 @@ These features are explicitly deferred but should be considered in architecture 
 - [x] Game over detection and scoring
 - [x] Docker setup
 
-> **Scope decisions for Phase 1**: Jokers excluded (106→104 tiles, no joker handling). Single round only (no "Play Again" or cumulative scoring). Tile placement via click-to-select (no drag-and-drop). Tile manipulation of existing board sets deferred to Phase 2.
+> **Scope decisions for Phase 1**: Single round only (no "Play Again" or cumulative scoring). Tile placement via click-to-select (no drag-and-drop).
 
 ### Phase 2: Core Gameplay
 
-- [ ] Tile manipulation (rearranging existing sets)
-- [ ] Undo within a turn
-- [ ] Joker handling (joker tiles added back, substitution and retrieval rules)
-- [ ] Cumulative scoring across rounds
-- [ ] Reconnection support
-- [ ] Disconnect notification
-- [ ] Inactivity expiry (24 hours)
+- [x] Tile manipulation (rearranging existing sets — extend, split, shift, substitute)
+- [x] Undo within a turn (board and rack snapshot at turn start; undo reverts all changes)
+- [x] Joker handling (2 joker tiles added back, joker-aware validation, retrieval requires playing a rack tile, 30-point penalty in scoring)
+- [x] Cumulative scoring across rounds (scores and games-won persist; Play Again starts new round)
+- [x] Reconnection support (disconnected players rejoin via game:reconnect; localStorage saves playerId/gameCode)
+- [x] Disconnect notification (opponent sees disconnect/reconnect events)
+- [x] Inactivity expiry (24 hours; periodic cleanup via GameManager)
+- [x] Stalemate detection (consecutive passes when pool is empty end the game; lowest rack value wins)
 
 ### Phase 3: Polish
 
@@ -420,3 +373,11 @@ These features are explicitly deferred but should be considered in architecture 
 - [ ] Persistent storage
 - [ ] Turn timer
 - [ ] Sound effects / animations
+
+## See Also
+
+- [rules.md](rules.md) — MUST read before making or planning changes to game behaviour or dynamics. Contains the full official Rummikub rules.
+- [entities.md](entities.md) — MUST read when trying to understand game data structures, entities and relationships.
+- [coding.md](coding.md) — MUST read before making code changes. Contains TDD process, code style, and architecture rules.
+- [planning.md](planning.md) — MUST read before creating any plans for features or changes.
+- [testing.md](testing.md) — MUST read before writing or running tests.

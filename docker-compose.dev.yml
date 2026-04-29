@@ -4,10 +4,6 @@ services:
     working_dir: /app
     volumes:
       - .:/app
-      - dev-node-modules:/app/node_modules
-      - shared-node-modules:/app/packages/shared/node_modules
-      - server-node-modules:/app/packages/server/node_modules
-      - client-node-modules:/app/packages/client/node_modules
     ports:
       - "3000:3000"
       - "5173:5173"
@@ -17,15 +13,7 @@ services:
     working_dir: /app/packages/qa
     volumes:
       - .:/app
-      - qa-node-modules:/app/packages/qa/node_modules
     environment:
       - BASE_URL=http://localhost:5173
       - SERVER_URL=http://localhost:3000
     network_mode: host
-
-volumes:
-  dev-node-modules:
-  shared-node-modules:
-  server-node-modules:
-  client-node-modules:
-  qa-node-modules:

@@ -2,11 +2,23 @@ import {
   INITIAL_HAND_SIZE,
   INITIAL_MELD_MINIMUM,
   isValidSet,
+  isValidBoard,
   calculateSetValue,
+  resolveJokerValue,
   generateAllTiles,
   shuffleTiles,
+  JOKER_COLOR,
+  JOKER_PENALTY,
 } from "@rummikub/shared";
-import type { TileSet, Player, GameState, GamePhase, PlayerGameState } from "@rummikub/shared";
+import type { TileSet, Tile, Player, GameState, GamePhase, PlayerGameState } from "@rummikub/shared";
+
+function isJoker(tile: Tile): boolean {
+  return tile.color === JOKER_COLOR;
+}
+
+function deepClone<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj));
+}
 
 export interface GameEndResult {
   winnerId: string;
@@ -15,6 +27,14 @@ export interface GameEndResult {
   loserPenalty: number;
   loserId: string;
   loserName: string;
+}
+
+export interface SeedState {
+  board: TileSet[];
+  racks: Record<string, Tile[]>;
+  pool: Tile[];
+  currentTurnPlayerId: string;
+  hasInitialMeld: Record<string, boolean>;
 }
 
 export class Game {
@@ -29,6 +49,9 @@ export class Game {
       board: [],
       pool: [],
       turnActions: [],
+      turnSnapshot: null,
+      roundNumber: 1,
+      consecutivePasses: 0,
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
     };
@@ -51,6 +74,7 @@ export class Game {
       hasInitialMeld: false,
       score: 0,
       connected: true,
+      gamesWon: 0,
     });
   }
 
@@ -71,12 +95,15 @@ export class Game {
     this.state.currentTurnIndex = 0;
     this.state.phase = "playing";
     this.state.turnActions = [];
+    this.state.roundNumber = 1;
+    this.state.consecutivePasses = 0;
     this.state.lastActivityAt = Date.now();
   }
 
   drawTile(playerId: string): void {
     this.requirePhase("playing");
     this.requireCurrentPlayer(playerId);
+    this.ensureTurnSnapshot();
 
     if (this.state.pool.length === 0) {
       throw new Error("Pool is empty");
@@ -86,12 +113,14 @@ export class Game {
     const player = this.getPlayer(playerId);
     player.rack.push(tile);
     this.state.turnActions.push({ type: "draw" });
+    this.state.consecutivePasses = 0;
     this.advanceTurn();
   }
 
   playSets(playerId: string, sets: TileSet[]): void {
     this.requirePhase("playing");
     this.requireCurrentPlayer(playerId);
+    this.ensureTurnSnapshot();
 
     const player = this.getPlayer(playerId);
 
@@ -114,25 +143,156 @@ export class Game {
     this.state.lastActivityAt = Date.now();
   }
 
+  manipulateBoard(playerId: string, newBoard: TileSet[]): void {
+    this.requirePhase("playing");
+    this.requireCurrentPlayer(playerId);
+    this.ensureTurnSnapshot();
+
+    const player = this.getPlayer(playerId);
+
+    if (!player.hasInitialMeld) {
+      throw new Error("Cannot manipulate board before making initial meld");
+    }
+
+    if (!isValidBoard(newBoard)) {
+      throw new Error("Resulting board has invalid sets");
+    }
+
+    const oldBoardTileIds = new Set(this.state.board.flatMap((s) => s.tiles.map((t) => t.id)));
+    const oldRackTileIds = new Set(player.rack.map((t) => t.id));
+    const newBoardTileIds = newBoard.flatMap((s) => s.tiles.map((t) => t.id));
+
+    for (const tileId of newBoardTileIds) {
+      if (!oldBoardTileIds.has(tileId) && !oldRackTileIds.has(tileId)) {
+        throw new Error("Tile on new board was not available");
+      }
+    }
+
+    const newBoardTileIdSet = new Set(newBoardTileIds);
+    if (newBoardTileIdSet.size !== newBoardTileIds.length) {
+      throw new Error("Duplicate tiles on board");
+    }
+
+    const jokersOnOldBoard = this.state.board.flatMap((s) => s.tiles).filter(isJoker);
+    const jokersOnNewBoard = newBoard.flatMap((s) => s.tiles).filter(isJoker);
+
+    const freedJokers = jokersOnOldBoard.filter((j) => !newBoardTileIdSet.has(j.id));
+    if (freedJokers.length > 0) {
+      const usedJokerIds = new Set(jokersOnNewBoard.map((t) => t.id));
+      for (const freedJoker of freedJokers) {
+        if (!usedJokerIds.has(freedJoker.id)) {
+          throw new Error("Freed joker must be used in the same turn");
+        }
+      }
+    }
+
+    const jokerRetrieved = this.wasJokerRetrieved(this.state.board, newBoard);
+    if (jokerRetrieved) {
+      const rackTilesOnNewBoard = newBoardTileIds.filter((id) => !oldBoardTileIds.has(id));
+      if (rackTilesOnNewBoard.length === 0) {
+        throw new Error("Must play at least one rack tile when retrieving a joker");
+      }
+    }
+
+    const newRack: Tile[] = [];
+    for (const tile of player.rack) {
+      if (!newBoardTileIdSet.has(tile.id)) {
+        newRack.push(tile);
+      }
+    }
+
+    const returnedBoardTiles: Tile[] = [];
+    for (const set of this.state.board) {
+      for (const tile of set.tiles) {
+        if (!newBoardTileIdSet.has(tile.id) && !oldRackTileIds.has(tile.id)) {
+          returnedBoardTiles.push(tile);
+        }
+      }
+    }
+
+    player.rack = [...newRack, ...returnedBoardTiles];
+    this.state.board = newBoard;
+    this.state.turnActions.push({ type: "manipulate" });
+    this.state.lastActivityAt = Date.now();
+  }
+
+  undoTurn(playerId: string): void {
+    this.requirePhase("playing");
+    this.requireCurrentPlayer(playerId);
+
+    const snapshot = this.state.turnSnapshot;
+    if (!snapshot) {
+      throw new Error("No turn snapshot to undo");
+    }
+
+    this.state.board = deepClone(snapshot.board);
+    const player = this.getPlayer(playerId);
+    player.rack = deepClone(snapshot.rack);
+    this.state.turnActions = [];
+    this.state.lastActivityAt = Date.now();
+  }
+
   endTurn(playerId: string): void {
     this.requirePhase("playing");
     this.requireCurrentPlayer(playerId);
 
+    if (this.state.turnActions.length === 0) {
+      throw new Error("Must play or draw before ending turn");
+    }
+
     const player = this.getPlayer(playerId);
 
-    if (this.state.turnActions.some((a) => a.type === "placeSet")) {
+    if (this.state.turnActions.some((a) => a.type === "placeSet" || a.type === "manipulate")) {
       if (!player.hasInitialMeld) {
-        const cumulativeValue = this.state.turnActions
-          .filter((a) => a.type === "placeSet")
-          .reduce((sum, a) => sum + calculateSetValue(a.tiles), 0);
+        if (this.state.turnActions.some((a) => a.type === "manipulate")) {
+          throw new Error("Cannot manipulate board before making initial meld");
+        }
+
+        const placeSetActions = this.state.turnActions.filter((a) => a.type === "placeSet");
+        const cumulativeValue = placeSetActions.reduce((sum, a) => {
+          const tiles = a.type === "placeSet" ? a.tiles : [];
+          return sum + calculateSetValue(tiles);
+        }, 0);
         if (cumulativeValue < INITIAL_MELD_MINIMUM) {
           throw new Error(`Initial meld must be at least ${INITIAL_MELD_MINIMUM} points`);
         }
       }
       player.hasInitialMeld = true;
+      this.state.consecutivePasses = 0;
     }
 
     this.state.turnActions = [];
+    this.advanceTurn();
+  }
+
+  endTurnWithBoard(playerId: string, newBoard?: TileSet[]): void {
+    if (newBoard) {
+      this.manipulateBoard(playerId, newBoard);
+    }
+    this.endTurn(playerId);
+  }
+
+  passTurn(playerId: string): void {
+    this.requirePhase("playing");
+    this.requireCurrentPlayer(playerId);
+
+    if (this.state.pool.length > 0) {
+      throw new Error("Can only pass when pool is empty");
+    }
+
+    if (this.state.turnActions.some((a) => a.type === "placeSet" || a.type === "manipulate")) {
+      throw new Error("Cannot pass after making a play this turn");
+    }
+
+    this.state.turnActions.push({ type: "pass" });
+    this.state.consecutivePasses++;
+    this.state.turnActions = [];
+
+    if (this.state.consecutivePasses >= 2) {
+      this.endGameStalemate();
+      return;
+    }
+
     this.advanceTurn();
   }
 
@@ -153,7 +313,7 @@ export class Game {
     const winner = this.state.players.find((p) => p.id === endResult.winnerId)!;
     const loser = this.state.players.find((p) => p.id !== endResult.winnerId)!;
 
-    const loserRackValue = loser.rack.reduce((sum, t) => sum + t.value, 0);
+    const loserRackValue = this.calculateRackValue(loser);
 
     return {
       winnerId: winner.id,
@@ -165,6 +325,104 @@ export class Game {
     };
   }
 
+  calculateStalemateScores(): GameEndResult | null {
+    const values = this.state.players.map((p) => ({
+      player: p,
+      rackValue: this.calculateRackValue(p),
+    }));
+
+    const minValue = Math.min(...values.map((v) => v.rackValue));
+    const maxValue = Math.max(...values.map((v) => v.rackValue));
+
+    if (minValue === maxValue) return null;
+
+    const winner = values.find((v) => v.rackValue === minValue)!.player;
+    const loser = values.find((v) => v.rackValue !== minValue)!.player;
+    const loserRackValue = values.find((v) => v.rackValue !== minValue)!.rackValue;
+    const winnerRackValue = minValue;
+
+    return {
+      winnerId: winner.id,
+      winnerName: winner.name,
+      winnerScore: loserRackValue - winnerRackValue,
+      loserId: loser.id,
+      loserName: loser.name,
+      loserPenalty: winnerRackValue - loserRackValue,
+    };
+  }
+
+  applyScores(result: GameEndResult): void {
+    const winner = this.state.players.find((p) => p.id === result.winnerId);
+    const loser = this.state.players.find((p) => p.id === result.loserId);
+    if (winner) winner.score += result.winnerScore;
+    if (loser) loser.score += result.loserPenalty;
+  }
+
+  applyStalemateScores(result: GameEndResult): void {
+    this.applyScores(result);
+  }
+
+  getRackValue(playerId: string): number {
+    const player = this.getPlayer(playerId);
+    return this.calculateRackValue(player);
+  }
+
+  private calculateRackValue(player: Player): number {
+    return player.rack.reduce((sum, t) => {
+      if (isJoker(t)) return sum + JOKER_PENALTY;
+      return sum + (t.value as number);
+    }, 0);
+  }
+
+  startNewRound(): void {
+    if (this.state.phase !== "ended") {
+      throw new Error("Can only start new round after game has ended");
+    }
+
+    const preservedScores = this.state.players.map((p) => ({ id: p.id, score: p.score, gamesWon: p.gamesWon }));
+
+    const allTiles = shuffleTiles(generateAllTiles());
+    let index = 0;
+
+    for (const player of this.state.players) {
+      player.rack = allTiles.slice(index, index + INITIAL_HAND_SIZE);
+      player.hasInitialMeld = false;
+      index += INITIAL_HAND_SIZE;
+    }
+
+    this.state.pool = allTiles.slice(index);
+    this.state.board = [];
+    this.state.turnActions = [];
+    this.state.currentTurnIndex = 0;
+    this.state.phase = "playing";
+    this.state.roundNumber++;
+    this.state.consecutivePasses = 0;
+    this.state.lastActivityAt = Date.now();
+  }
+
+  reconnectPlayer(playerId: string): void {
+    const player = this.getPlayer(playerId);
+    player.connected = true;
+  }
+
+  seedGame(seed: SeedState): void {
+    this.state.phase = "playing";
+    this.state.board = deepClone(seed.board);
+    this.state.pool = deepClone(seed.pool);
+    this.state.turnActions = [];
+    this.state.turnSnapshot = null;
+    this.state.consecutivePasses = 0;
+
+    for (const player of this.state.players) {
+      player.rack = deepClone(seed.racks[player.id] ?? []);
+      player.hasInitialMeld = seed.hasInitialMeld[player.id] ?? false;
+    }
+
+    const turnIndex = this.state.players.findIndex((p) => p.id === seed.currentTurnPlayerId);
+    this.state.currentTurnIndex = turnIndex >= 0 ? turnIndex : 0;
+    this.state.lastActivityAt = Date.now();
+  }
+
   getState(): GameState {
     return this.state;
   }
@@ -173,6 +431,7 @@ export class Game {
     const player = this.getPlayer(playerId);
     const opponent = this.state.players.find((p) => p.id !== playerId)!;
     const currentPlayer = this.state.players[this.state.currentTurnIndex];
+    const hasPlayedThisTurn = currentPlayer.id === playerId && this.state.turnActions.length > 0;
 
     return {
       id: this.state.id,
@@ -188,6 +447,58 @@ export class Game {
       yourScore: player.score,
       opponentScore: opponent.score,
       hasInitialMeld: player.hasInitialMeld,
+      hasPlayedThisTurn,
+      roundNumber: this.state.roundNumber,
+      yourGamesWon: player.gamesWon,
+      opponentGamesWon: opponent.gamesWon,
+      opponentConnected: opponent.connected,
+      consecutivePasses: this.state.consecutivePasses,
+    };
+  }
+
+  private endGameStalemate(): void {
+    this.state.phase = "ended";
+  }
+
+  private wasJokerRetrieved(oldBoard: TileSet[], newBoard: TileSet[]): boolean {
+    const oldJokerSets = new Map<string, Set<string>>();
+    for (const set of oldBoard) {
+      for (const tile of set.tiles) {
+        if (isJoker(tile)) {
+          const siblingIds = set.tiles.filter((t) => t.id !== tile.id).map((t) => t.id);
+          oldJokerSets.set(tile.id, new Set(siblingIds));
+        }
+      }
+    }
+
+    const newJokerSets = new Map<string, Set<string>>();
+    for (const set of newBoard) {
+      for (const tile of set.tiles) {
+        if (isJoker(tile)) {
+          const siblingIds = set.tiles.filter((t) => t.id !== tile.id).map((t) => t.id);
+          newJokerSets.set(tile.id, new Set(siblingIds));
+        }
+      }
+    }
+
+    for (const [jokerId, oldSiblings] of oldJokerSets) {
+      const newSiblings = newJokerSets.get(jokerId);
+      if (!newSiblings) return true;
+      if (oldSiblings.size !== newSiblings.size) return true;
+      for (const id of oldSiblings) {
+        if (!newSiblings.has(id)) return true;
+      }
+    }
+
+    return false;
+  }
+
+  private ensureTurnSnapshot(): void {
+    if (this.state.turnSnapshot) return;
+    const currentPlayer = this.state.players[this.state.currentTurnIndex];
+    this.state.turnSnapshot = {
+      board: deepClone(this.state.board),
+      rack: deepClone(currentPlayer.rack),
     };
   }
 
@@ -213,5 +524,7 @@ export class Game {
   private advanceTurn(): void {
     this.state.currentTurnIndex = (this.state.currentTurnIndex + 1) % this.state.players.length;
     this.state.lastActivityAt = Date.now();
+    this.state.turnActions = [];
+    this.state.turnSnapshot = null;
   }
 }

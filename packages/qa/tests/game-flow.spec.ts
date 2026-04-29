@@ -100,7 +100,7 @@ test.describe("Game Start", () => {
     expect(rack2Count).toBe(14);
 
     const pool = await getPoolCount(page1);
-    expect(pool).toBe("76");
+    expect(pool).toBe("78");
 
     const p1YourTurn = await page1.getByText("Your turn").isVisible();
     const p2YourTurn = await page2.getByText("Your turn").isVisible();

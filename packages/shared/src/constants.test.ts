@@ -4,11 +4,16 @@ import {
   VALUES,
   TILES_PER_COPY,
   TOTAL_NUMBERED_TILES,
+  TOTAL_TILES,
   INITIAL_HAND_SIZE,
   INITIAL_MELD_MINIMUM,
   MIN_SET_SIZE,
   MAX_GROUP_SIZE,
   GAME_CODE_LENGTH,
+  JOKER_VALUE,
+  JOKER_COLOR,
+  JOKER_PENALTY,
+  JOKER_COUNT,
 } from "./constants";
 
 describe("COLORS", () => {
@@ -60,6 +65,36 @@ describe("MIN_SET_SIZE", () => {
 describe("MAX_GROUP_SIZE", () => {
   it("should be 4", () => {
     expect(MAX_GROUP_SIZE).toBe(4);
+  });
+});
+
+describe("JOKER_VALUE", () => {
+  it("should be 0", () => {
+    expect(JOKER_VALUE).toBe(0);
+  });
+});
+
+describe("JOKER_COLOR", () => {
+  it("should be 'joker'", () => {
+    expect(JOKER_COLOR).toBe("joker");
+  });
+});
+
+describe("JOKER_PENALTY", () => {
+  it("should be 30", () => {
+    expect(JOKER_PENALTY).toBe(30);
+  });
+});
+
+describe("JOKER_COUNT", () => {
+  it("should be 2", () => {
+    expect(JOKER_COUNT).toBe(2);
+  });
+});
+
+describe("TOTAL_TILES", () => {
+  it("should be 106 (104 numbered + 2 jokers)", () => {
+    expect(TOTAL_TILES).toBe(106);
   });
 });
 
