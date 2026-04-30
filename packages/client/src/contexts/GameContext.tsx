@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { PlayerGameState } from "@rummikub/shared";
+import type { PlayerGameState, SpectatorGameState } from "@rummikub/shared";
 
 interface GameContextValue {
   gameState: PlayerGameState | null;
@@ -10,6 +10,10 @@ interface GameContextValue {
   setGameCode: (code: string | null) => void;
   error: string | null;
   setError: (error: string | null) => void;
+  isSpectator: boolean;
+  setIsSpectator: (spectator: boolean) => void;
+  spectatorState: SpectatorGameState | null;
+  setSpectatorState: (state: SpectatorGameState | null) => void;
 }
 
 export const GameContext = createContext<GameContextValue>({
@@ -21,6 +25,10 @@ export const GameContext = createContext<GameContextValue>({
   setGameCode: () => {},
   error: null,
   setError: () => {},
+  isSpectator: false,
+  setIsSpectator: () => {},
+  spectatorState: null,
+  setSpectatorState: () => {},
 });
 
 export function useGame() {

@@ -37,4 +37,6 @@ export type {
   PlayerDisconnectedPayload,
   PlayerReconnectedPayload,
   GameErrorPayload,
+  SpectatorGameState,
+  SpectatorJoinedPayload,
 } from "./types.js";

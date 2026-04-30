@@ -118,3 +118,18 @@ export interface PlayerReconnectedPayload {
 export interface GameErrorPayload {
   message: string;
 }
+
+export interface SpectatorGameState {
+  id: string;
+  phase: GamePhase;
+  board: TileSet[];
+  poolSize: number;
+  currentTurnPlayerId: string;
+  players: { id: string; name: string; rackSize: number; score: number; gamesWon: number; connected: boolean }[];
+  roundNumber: number;
+  consecutivePasses: number;
+}
+
+export interface SpectatorJoinedPayload {
+  gameState: SpectatorGameState;
+}
