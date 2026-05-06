@@ -2,17 +2,22 @@ import { Server as SocketIOServer } from "socket.io";
 import { GameManager } from "./gameManager.js";
 import type { TileSet } from "@rummikub/shared";
 import type { SeedState } from "./game.js";
+import type { SpectatorGameState } from "@rummikub/shared";
 
 const manager = new GameManager();
 
 interface SocketData {
   playerId: string;
   gameCode: string;
+  isSpectator: boolean;
 }
 
 export function registerHandlers(io: SocketIOServer): void {
   io.on("connection", (socket) => {
     const data = socket.data as SocketData;
+    data.playerId = "";
+    data.gameCode = "";
+    data.isSpectator = false;
 
     socket.on("game:create", ({ playerName }: { playerName: string }) => {
       const playerId = `player-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -37,7 +42,7 @@ export function registerHandlers(io: SocketIOServer): void {
 
       const state = game.getState();
       if (state.players.length >= 2) {
-        socket.emit("game:error", { message: "Game is full" });
+        socket.emit("game:full", { gameCode });
         return;
       }
 
@@ -51,6 +56,27 @@ export function registerHandlers(io: SocketIOServer): void {
       const opponent = state.players[0];
       socket.emit("game:joined", { playerId, opponentName: opponent.name });
       socket.to(gameCode).emit("game:joined", { playerId: opponent.id, opponentName: playerName });
+    });
+
+    socket.on("game:spectate", ({ gameCode }: { gameCode: string }) => {
+      const game = manager.getGame(gameCode);
+      if (!game) {
+        socket.emit("game:error", { message: "Game not found" });
+        return;
+      }
+
+      const state = game.getState();
+      if (state.players.length < 2) {
+        socket.emit("game:error", { message: "Game is not full yet" });
+        return;
+      }
+
+      data.gameCode = gameCode;
+      data.playerId = "";
+      data.isSpectator = true;
+      socket.join(gameCode);
+
+      socket.emit("spectator:joined", { gameState: game.getSpectatorState() });
     });
 
     socket.on("game:start", ({ gameCode: gc }: { gameCode: string }) => {
@@ -72,8 +98,12 @@ export function registerHandlers(io: SocketIOServer): void {
         for (const socketId of sockets) {
           const s = io.sockets.sockets.get(socketId);
           if (s) {
-            const data = s.data as SocketData;
-            s.emit("game:started", { gameState: game.getPlayerState(data.playerId) });
+            const sd = s.data as SocketData;
+            if (sd.isSpectator) {
+              s.emit("game:started", { gameState: game.getSpectatorState() as SpectatorGameState });
+            } else {
+              s.emit("game:started", { gameState: game.getPlayerState(sd.playerId) });
+            }
           }
         }
       }
@@ -280,7 +310,7 @@ export function registerHandlers(io: SocketIOServer): void {
     }
 
     socket.on("disconnect", () => {
-      if (data.gameCode) {
+      if (data.gameCode && !data.isSpectator) {
         const game = manager.getGame(data.gameCode);
         if (game) {
           const player = game.getState().players.find((p) => p.id === data.playerId);
@@ -306,6 +336,17 @@ function emitPlayerStates(io: SocketIOServer, game: ReturnType<GameManager["getG
       const s = io.sockets.sockets.get(socketId);
       if (s && (s.data as SocketData).playerId === player.id) {
         s.emit("game:state", { gameState: game.getPlayerState(player.id) });
+      }
+    }
+  }
+
+  const roomSockets = io.sockets.adapter.rooms.get(gameCode);
+  if (roomSockets) {
+    const spectatorState = game.getSpectatorState();
+    for (const socketId of roomSockets) {
+      const s = io.sockets.sockets.get(socketId);
+      if (s && (s.data as SocketData).isSpectator) {
+        s.emit("game:state", { gameState: spectatorState });
       }
     }
   }

@@ -10,7 +10,7 @@ import {
   JOKER_COLOR,
   JOKER_PENALTY,
 } from "@rummikub/shared";
-import type { TileSet, Tile, Player, GameState, GamePhase, PlayerGameState } from "@rummikub/shared";
+import type { TileSet, Tile, Player, GameState, GamePhase, PlayerGameState, SpectatorGameState } from "@rummikub/shared";
 
 function isJoker(tile: Tile): boolean {
   return tile.color === JOKER_COLOR;
@@ -429,11 +429,15 @@ export class Game {
 
   getPlayerState(playerId: string): PlayerGameState {
     const player = this.getPlayer(playerId);
-    const opponent = this.state.players.find((p) => p.id !== playerId)!;
+    const opponent = this.state.players.find((p) => p.id !== playerId);
+    if (!opponent) {
+      throw new Error("No opponent found");
+    }
     const currentPlayer = this.state.players[this.state.currentTurnIndex];
     const hasPlayedThisTurn = currentPlayer.id === playerId && this.state.turnActions.length > 0;
 
     return {
+      type: "player",
       id: this.state.id,
       phase: this.state.phase,
       yourRack: player.rack,
@@ -452,6 +456,27 @@ export class Game {
       yourGamesWon: player.gamesWon,
       opponentGamesWon: opponent.gamesWon,
       opponentConnected: opponent.connected,
+      consecutivePasses: this.state.consecutivePasses,
+    };
+  }
+
+  getSpectatorState(): SpectatorGameState {
+    const currentPlayer = this.state.players[this.state.currentTurnIndex];
+    return {
+      type: "spectator",
+      id: this.state.id,
+      phase: this.state.phase,
+      board: this.state.board,
+      poolSize: this.state.pool.length,
+      currentTurnPlayerId: currentPlayer.id,
+      players: this.state.players.map((p) => ({
+        id: p.id,
+        name: p.name,
+        score: p.score,
+        gamesWon: p.gamesWon,
+        connected: p.connected,
+      })),
+      roundNumber: this.state.roundNumber,
       consecutivePasses: this.state.consecutivePasses,
     };
   }

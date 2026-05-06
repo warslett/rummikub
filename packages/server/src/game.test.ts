@@ -404,6 +404,7 @@ describe("Game", () => {
     it("should return own rack but only opponent rack size", () => {
       game.start();
       const state = game.getPlayerState("p1");
+      expect(state.type).toBe("player");
       expect(state.yourRack).toHaveLength(INITIAL_HAND_SIZE);
       expect(state.opponentRackSize).toBe(INITIAL_HAND_SIZE);
     });
@@ -1021,6 +1022,69 @@ describe("Game", () => {
       game.getState().players[0].rack = [makeTile("red", 5), joker("joker-1")];
       const value = game.getRackValue("p1");
       expect(value).toBe(5 + JOKER_PENALTY);
+    });
+  });
+
+  describe("getSpectatorState", () => {
+    beforeEach(() => {
+      game.start();
+      game.getState().players[0].rack = [
+        makeTile("red", 10, "r10a"),
+        makeTile("red", 11, "r11a"),
+        makeTile("red", 12, "r12a"),
+      ];
+      game.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }]);
+      game.endTurn("p1");
+    });
+
+    it("should return correct structure", () => {
+      const state = game.getSpectatorState();
+      expect(state).toBeDefined();
+      expect(state.type).toBe("spectator");
+      expect(state.id).toBe("TEST01");
+      expect(state.phase).toBe("playing");
+      expect(state.board).toBeDefined();
+      expect(state.poolSize).toBeGreaterThan(0);
+      expect(state.currentTurnPlayerId).toBe("p2");
+      expect(state.roundNumber).toBe(1);
+      expect(state.consecutivePasses).toBe(0);
+    });
+
+    it("should include both player names without rack sizes", () => {
+      const state = game.getSpectatorState();
+      expect(state.players).toHaveLength(2);
+      const p1 = state.players.find((p) => p.id === "p1")!;
+      const p2 = state.players.find((p) => p.id === "p2")!;
+      expect(p1.name).toBe("Alice");
+      expect(p2.name).toBe("Bob");
+      expect((p1 as { rackSize?: number }).rackSize).toBeUndefined();
+      expect((p2 as { rackSize?: number }).rackSize).toBeUndefined();
+    });
+
+    it("should not include any player rack tiles", () => {
+      const state = game.getSpectatorState();
+      for (const p of state.players) {
+        expect((p as { rack?: Tile[] }).rack).toBeUndefined();
+      }
+    });
+
+    it("should include player scores and gamesWon", () => {
+      const state = game.getSpectatorState();
+      const p1 = state.players.find((p) => p.id === "p1")!;
+      expect(p1.score).toBe(0);
+      expect(p1.gamesWon).toBe(0);
+    });
+
+    it("should include connected status", () => {
+      const state = game.getSpectatorState();
+      const p1 = state.players.find((p) => p.id === "p1")!;
+      expect(p1.connected).toBe(true);
+    });
+
+    it("should not include youRack field from PlayerGameState", () => {
+      const state = game.getSpectatorState();
+      expect((state as { yourRack?: Tile[] }).yourRack).toBeUndefined();
+      expect((state as { opponentRackSize?: number }).opponentRackSize).toBeUndefined();
     });
   });
 });

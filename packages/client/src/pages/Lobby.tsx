@@ -51,6 +51,9 @@ export function Lobby() {
     socket.once("game:error", () => {
       setHasJoined(false);
     });
+    socket.once("game:full", () => {
+      setHasJoined(false);
+    });
   }
 
   function handleStart() {

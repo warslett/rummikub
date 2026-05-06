@@ -32,9 +32,12 @@ export type {
   GameJoinedPayload,
   GameStartedPayload,
   GameStatePayload,
+  SpectatorGameStatePayload,
   MoveRejectedPayload,
   GameEndedPayload,
   PlayerDisconnectedPayload,
   PlayerReconnectedPayload,
   GameErrorPayload,
+  SpectatorGameState,
+  SpectatorJoinedPayload,
 } from "./types.js";

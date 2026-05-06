@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { GameContext, useGame } from "./contexts/GameContext";
 import { socket } from "./socket";
-import type { PlayerGameState } from "@rummikub/shared";
+import type { PlayerGameState, SpectatorGameState } from "@rummikub/shared";
 import { Home } from "./pages/Home";
 import { Lobby } from "./pages/Lobby";
 import { GameBoard } from "./pages/GameBoard";
+import { SpectateBoard } from "./pages/SpectateBoard";
 import { GameOver } from "./pages/GameOver";
 
 interface GameEndedData {
@@ -23,6 +24,8 @@ export function App() {
   const [gameCode, setGameCode] = useState<string | null>(() => localStorage.getItem("rummikub_gameCode"));
   const [error, setError] = useState<string | null>(null);
   const [gameEnded, setGameEnded] = useState<GameEndedData | null>(null);
+  const [isSpectator, setIsSpectator] = useState(false);
+  const [spectatorState, setSpectatorState] = useState<SpectatorGameState | null>(null);
 
   useEffect(() => {
     if (playerId) localStorage.setItem("rummikub_playerId", playerId);
@@ -35,16 +38,29 @@ export function App() {
   }, [gameCode]);
 
   useEffect(() => {
-    socket.on("game:state", ({ gameState: state }: { gameState: PlayerGameState }) => {
-      setGameState(state);
+    socket.on("game:state", ({ gameState: state }: { gameState: PlayerGameState | SpectatorGameState }) => {
+      if (state.type === "spectator") {
+        setSpectatorState(state);
+      } else {
+        setGameState(state);
+      }
     });
 
-    socket.on("game:started", ({ gameState: state }: { gameState: PlayerGameState }) => {
-      setGameState(state);
+    socket.on("game:started", ({ gameState: state }: { gameState: PlayerGameState | SpectatorGameState }) => {
+      if (state.type === "spectator") {
+        setSpectatorState(state);
+      } else {
+        setGameState(state);
+      }
     });
 
     socket.on("game:ended", (data: GameEndedData) => {
       setGameEnded(data);
+    });
+
+    socket.on("spectator:joined", ({ gameState: state }: { gameState: SpectatorGameState }) => {
+      setSpectatorState(state);
+      setIsSpectator(true);
     });
 
     socket.on("move:rejected", ({ reason }: { reason: string }) => {
@@ -70,6 +86,7 @@ export function App() {
       socket.off("game:state");
       socket.off("game:started");
       socket.off("game:ended");
+      socket.off("spectator:joined");
       socket.off("move:rejected");
       socket.off("game:error");
       socket.off("game:created");
@@ -80,7 +97,7 @@ export function App() {
   const clearError = useCallback(() => setError(null), []);
 
   return (
-    <GameContext.Provider value={{ gameState, setGameState, playerId, setPlayerId, gameCode, setGameCode, error, setError: clearError }}>
+    <GameContext.Provider value={{ gameState, setGameState, playerId, setPlayerId, gameCode, setGameCode, error, setError: clearError, isSpectator, setIsSpectator, spectatorState, setSpectatorState }}>
       <BrowserRouter>
         <div className="min-h-screen bg-gray-900 text-white">
           {error && (
@@ -102,16 +119,27 @@ export function App() {
 }
 
 function GameBoardWrapper() {
-  const { gameState, playerId } = useGame();
+  const { gameState, playerId, isSpectator, spectatorState } = useGame();
   const [gameEnded, setGameEnded] = useState<GameEndedData | null>(null);
+  const [gameIsFull, setGameIsFull] = useState(false);
 
   useEffect(() => {
     function onGameEnded(data: GameEndedData) {
       setGameEnded(data);
     }
+    function onGameFull() {
+      setGameIsFull(true);
+    }
+    function onGameJoined() {
+      setGameIsFull(false);
+    }
     socket.on("game:ended", onGameEnded);
+    socket.on("game:full", onGameFull);
+    socket.on("game:joined", onGameJoined);
     return () => {
       socket.off("game:ended", onGameEnded);
+      socket.off("game:full", onGameFull);
+      socket.off("game:joined", onGameJoined);
     };
   }, []);
 
@@ -119,7 +147,43 @@ function GameBoardWrapper() {
     if (gameEnded && gameState && gameState.phase === "playing") {
       setGameEnded(null);
     }
-  }, [gameState]);
+    if (gameEnded && spectatorState && spectatorState.phase === "playing") {
+      setGameEnded(null);
+    }
+  }, [gameState, spectatorState]);
+
+  if (isSpectator) {
+    if (gameEnded) {
+      return <GameOver result={gameEnded} />;
+    }
+    if (spectatorState) {
+      return <SpectateBoard />;
+    }
+    return <div className="flex items-center justify-center min-h-screen text-gray-400">Loading...</div>;
+  }
+
+  if (gameIsFull && !isSpectator) {
+    function handleSpectate() {
+      const savedGameCode = localStorage.getItem("rummikub_gameCode");
+      if (!socket.connected) {
+        socket.connect();
+      }
+      socket.emit("game:spectate", { gameCode: savedGameCode ?? "" });
+    }
+
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+        <h1 className="text-3xl font-bold text-amber-400">Game In Progress</h1>
+        <p className="text-gray-400">This game is full.</p>
+        <button
+          onClick={handleSpectate}
+          className="px-6 py-3 bg-amber-500 hover:bg-amber-600 rounded font-bold text-lg"
+        >
+          Watch as Spectator
+        </button>
+      </div>
+    );
+  }
 
   if (!gameState || !playerId) {
     const savedPlayerId = localStorage.getItem("rummikub_playerId");
