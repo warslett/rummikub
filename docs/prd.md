@@ -357,7 +357,7 @@ These features are explicitly deferred but should be considered in architecture 
 
 ### Phase 3: Polish
 
-- [ ] Spectator mode
+- [x] Spectator mode
 - [ ] Mobile-responsive layout
 - [ ] Drag-and-drop tile placement
 - [ ] Touch support
