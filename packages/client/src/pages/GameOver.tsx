@@ -13,7 +13,7 @@ interface GameOverResult {
 
 export function GameOver({ result }: { result: GameOverResult }) {
   const navigate = useNavigate();
-  const { playerId } = useGame();
+  const { playerId, isSpectator } = useGame();
   const isWinner = playerId === result.winnerId;
 
   function handlePlayAgain() {
@@ -22,6 +22,9 @@ export function GameOver({ result }: { result: GameOverResult }) {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen gap-6">
+      {isSpectator && (
+        <div className="bg-gray-800/50 px-4 py-1 rounded text-amber-400 text-sm">Spectating</div>
+      )}
       <h1 className="text-5xl font-bold text-amber-400">Game Over</h1>
       {result.isStalemate && (
         <div className="text-yellow-400 font-bold">Stalemate — pool empty, both players passed</div>

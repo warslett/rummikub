@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { Game } from "./game";
 import { INITIAL_HAND_SIZE, INITIAL_MELD_MINIMUM, TOTAL_TILES, JOKER_PENALTY } from "@rummikub/shared";
-import type { Tile, TileSet, SpectatorGameState } from "@rummikub/shared";
+import type { Tile, TileSet } from "@rummikub/shared";
 
 function makeTile(color: Tile["color"], value: number, id?: string): Tile {
   return { id: id ?? `${color}-${value}-a`, color, value: value as Tile["value"] };
@@ -404,6 +404,7 @@ describe("Game", () => {
     it("should return own rack but only opponent rack size", () => {
       game.start();
       const state = game.getPlayerState("p1");
+      expect(state.type).toBe("player");
       expect(state.yourRack).toHaveLength(INITIAL_HAND_SIZE);
       expect(state.opponentRackSize).toBe(INITIAL_HAND_SIZE);
     });
@@ -1039,6 +1040,7 @@ describe("Game", () => {
     it("should return correct structure", () => {
       const state = game.getSpectatorState();
       expect(state).toBeDefined();
+      expect(state.type).toBe("spectator");
       expect(state.id).toBe("TEST01");
       expect(state.phase).toBe("playing");
       expect(state.board).toBeDefined();
@@ -1048,15 +1050,15 @@ describe("Game", () => {
       expect(state.consecutivePasses).toBe(0);
     });
 
-    it("should include both player names and rack sizes", () => {
+    it("should include both player names without rack sizes", () => {
       const state = game.getSpectatorState();
       expect(state.players).toHaveLength(2);
       const p1 = state.players.find((p) => p.id === "p1")!;
       const p2 = state.players.find((p) => p.id === "p2")!;
       expect(p1.name).toBe("Alice");
-      expect(p1.rackSize).toBe(0);
       expect(p2.name).toBe("Bob");
-      expect(p2.rackSize).toBe(INITIAL_HAND_SIZE);
+      expect((p1 as { rackSize?: number }).rackSize).toBeUndefined();
+      expect((p2 as { rackSize?: number }).rackSize).toBeUndefined();
     });
 
     it("should not include any player rack tiles", () => {

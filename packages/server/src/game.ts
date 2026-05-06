@@ -428,35 +428,34 @@ export class Game {
   }
 
   getPlayerState(playerId: string): PlayerGameState {
-    console.debug(`[getPlayerState] playerId=${playerId} players=${this.state.players.length} playerIds=[${this.state.players.map(p => p.id).join(",")}]`);
     const player = this.getPlayer(playerId);
     const opponent = this.state.players.find((p) => p.id !== playerId);
     if (!opponent) {
-      console.error(`[getPlayerState] CRASH IMMINENT: No opponent found for playerId=${playerId}! players=${this.state.players.length} playerIds=[${this.state.players.map(p => p.id).join(",")}]`);
+      throw new Error("No opponent found");
     }
-    const opponentAsserted = opponent!;
     const currentPlayer = this.state.players[this.state.currentTurnIndex];
     const hasPlayedThisTurn = currentPlayer.id === playerId && this.state.turnActions.length > 0;
 
     return {
+      type: "player",
       id: this.state.id,
       phase: this.state.phase,
       yourRack: player.rack,
-      opponentRackSize: opponentAsserted.rack.length,
-      opponentName: opponentAsserted.name,
+      opponentRackSize: opponent.rack.length,
+      opponentName: opponent.name,
       yourName: player.name,
       board: this.state.board,
       poolSize: this.state.pool.length,
       currentTurnPlayerId: currentPlayer.id,
       isYourTurn: currentPlayer.id === playerId,
       yourScore: player.score,
-      opponentScore: opponentAsserted.score,
+      opponentScore: opponent.score,
       hasInitialMeld: player.hasInitialMeld,
       hasPlayedThisTurn,
       roundNumber: this.state.roundNumber,
       yourGamesWon: player.gamesWon,
-      opponentGamesWon: opponentAsserted.gamesWon,
-      opponentConnected: opponentAsserted.connected,
+      opponentGamesWon: opponent.gamesWon,
+      opponentConnected: opponent.connected,
       consecutivePasses: this.state.consecutivePasses,
     };
   }
@@ -464,6 +463,7 @@ export class Game {
   getSpectatorState(): SpectatorGameState {
     const currentPlayer = this.state.players[this.state.currentTurnIndex];
     return {
+      type: "spectator",
       id: this.state.id,
       phase: this.state.phase,
       board: this.state.board,
@@ -472,7 +472,6 @@ export class Game {
       players: this.state.players.map((p) => ({
         id: p.id,
         name: p.name,
-        rackSize: p.rack.length,
         score: p.score,
         gamesWon: p.gamesWon,
         connected: p.connected,

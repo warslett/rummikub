@@ -52,6 +52,7 @@ export type TurnAction =
   | { type: "pass" };
 
 export interface PlayerGameState {
+  type: "player";
   id: string;
   phase: GamePhase;
   yourRack: Tile[];
@@ -92,6 +93,10 @@ export interface GameStatePayload {
   gameState: PlayerGameState;
 }
 
+export interface SpectatorGameStatePayload {
+  gameState: SpectatorGameState;
+}
+
 export interface MoveRejectedPayload {
   reason: string;
 }
@@ -120,12 +125,13 @@ export interface GameErrorPayload {
 }
 
 export interface SpectatorGameState {
+  type: "spectator";
   id: string;
   phase: GamePhase;
   board: TileSet[];
   poolSize: number;
   currentTurnPlayerId: string;
-  players: { id: string; name: string; rackSize: number; score: number; gamesWon: number; connected: boolean }[];
+  players: { id: string; name: string; score: number; gamesWon: number; connected: boolean }[];
   roundNumber: number;
   consecutivePasses: number;
 }

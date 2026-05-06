@@ -2,6 +2,7 @@ import { Server as SocketIOServer } from "socket.io";
 import { GameManager } from "./gameManager.js";
 import type { TileSet } from "@rummikub/shared";
 import type { SeedState } from "./game.js";
+import type { SpectatorGameState } from "@rummikub/shared";
 
 const manager = new GameManager();
 
@@ -13,8 +14,10 @@ interface SocketData {
 
 export function registerHandlers(io: SocketIOServer): void {
   io.on("connection", (socket) => {
-    console.log(`[connection] new socket id=${socket.id}`);
     const data = socket.data as SocketData;
+    data.playerId = "";
+    data.gameCode = "";
+    data.isSpectator = false;
 
     socket.on("game:create", ({ playerName }: { playerName: string }) => {
       const playerId = `player-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -31,7 +34,6 @@ export function registerHandlers(io: SocketIOServer): void {
     });
 
     socket.on("game:join", ({ gameCode, playerName }: { gameCode: string; playerName: string }) => {
-      console.log(`[game:join] gameCode=${gameCode} playerName=${playerName}`);
       const game = manager.getGame(gameCode);
       if (!game) {
         socket.emit("game:error", { message: "Game not found" });
@@ -39,7 +41,6 @@ export function registerHandlers(io: SocketIOServer): void {
       }
 
       const state = game.getState();
-      console.debug(`[game:join] phase=${state.phase} players=${state.players.length} playerIds=[${state.players.map(p => p.id).join(",")}]`);
       if (state.players.length >= 2) {
         socket.emit("game:full", { gameCode });
         return;
@@ -58,7 +59,6 @@ export function registerHandlers(io: SocketIOServer): void {
     });
 
     socket.on("game:spectate", ({ gameCode }: { gameCode: string }) => {
-      console.log(`[game:spectate] gameCode=${gameCode}`);
       const game = manager.getGame(gameCode);
       if (!game) {
         socket.emit("game:error", { message: "Game not found" });
@@ -66,7 +66,10 @@ export function registerHandlers(io: SocketIOServer): void {
       }
 
       const state = game.getState();
-      console.debug(`[game:spectate] phase=${state.phase} players=${state.players.length} playerIds=[${state.players.map(p => p.id).join(",")}]`);
+      if (state.players.length < 2) {
+        socket.emit("game:error", { message: "Game is not full yet" });
+        return;
+      }
 
       data.gameCode = gameCode;
       data.playerId = "";
@@ -97,7 +100,7 @@ export function registerHandlers(io: SocketIOServer): void {
           if (s) {
             const sd = s.data as SocketData;
             if (sd.isSpectator) {
-              s.emit("game:state", { gameState: game.getSpectatorState() });
+              s.emit("game:started", { gameState: game.getSpectatorState() as SpectatorGameState });
             } else {
               s.emit("game:started", { gameState: game.getPlayerState(sd.playerId) });
             }
@@ -263,20 +266,15 @@ export function registerHandlers(io: SocketIOServer): void {
     });
 
     socket.on("game:reconnect", ({ gameCode, playerId }: { gameCode: string; playerId: string }) => {
-      console.log(`[game:reconnect] gameCode=${gameCode} playerId=${playerId}`);
       const game = manager.getGame(gameCode);
       if (!game) {
         socket.emit("game:error", { message: "Game not found" });
         return;
       }
 
-      const state = game.getState();
-      console.debug(`[game:reconnect] phase=${state.phase} players=${state.players.length} playerIds=[${state.players.map(p => p.id).join(",")}]`);
-
       try {
         game.reconnectPlayer(playerId);
       } catch (err) {
-        console.log(`[game:reconnect] reconnectPlayer failed: ${(err as Error).message}`);
         socket.emit("game:error", { message: (err as Error).message });
         return;
       }
@@ -331,14 +329,12 @@ export function registerHandlers(io: SocketIOServer): void {
 
 function emitPlayerStates(io: SocketIOServer, game: ReturnType<GameManager["getGame"]>, gameCode: string): void {
   if (!game) return;
-  console.debug(`[emitPlayerStates] gameCode=${gameCode} players=${game.getState().players.length}`);
   for (const player of game.getState().players) {
     const sockets = io.sockets.adapter.rooms.get(gameCode);
     if (!sockets) continue;
     for (const socketId of sockets) {
       const s = io.sockets.sockets.get(socketId);
       if (s && (s.data as SocketData).playerId === player.id) {
-        console.debug(`[emitPlayerStates] emitting player state for playerId=${player.id} socketId=${socketId}`);
         s.emit("game:state", { gameState: game.getPlayerState(player.id) });
       }
     }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { GameContext, useGame } from "./contexts/GameContext";
 import { socket } from "./socket";
@@ -26,7 +26,6 @@ export function App() {
   const [gameEnded, setGameEnded] = useState<GameEndedData | null>(null);
   const [isSpectator, setIsSpectator] = useState(false);
   const [spectatorState, setSpectatorState] = useState<SpectatorGameState | null>(null);
-  const isSpectatorRef = useRef(false);
 
   useEffect(() => {
     if (playerId) localStorage.setItem("rummikub_playerId", playerId);
@@ -40,15 +39,19 @@ export function App() {
 
   useEffect(() => {
     socket.on("game:state", ({ gameState: state }: { gameState: PlayerGameState | SpectatorGameState }) => {
-      if (isSpectatorRef.current) {
-        setSpectatorState(state as SpectatorGameState);
+      if (state.type === "spectator") {
+        setSpectatorState(state);
       } else {
-        setGameState(state as PlayerGameState);
+        setGameState(state);
       }
     });
 
-    socket.on("game:started", ({ gameState: state }: { gameState: PlayerGameState }) => {
-      setGameState(state);
+    socket.on("game:started", ({ gameState: state }: { gameState: PlayerGameState | SpectatorGameState }) => {
+      if (state.type === "spectator") {
+        setSpectatorState(state);
+      } else {
+        setGameState(state);
+      }
     });
 
     socket.on("game:ended", (data: GameEndedData) => {
@@ -57,7 +60,6 @@ export function App() {
 
     socket.on("spectator:joined", ({ gameState: state }: { gameState: SpectatorGameState }) => {
       setSpectatorState(state);
-      isSpectatorRef.current = true;
       setIsSpectator(true);
     });
 
@@ -128,11 +130,16 @@ function GameBoardWrapper() {
     function onGameFull() {
       setGameIsFull(true);
     }
+    function onGameJoined() {
+      setGameIsFull(false);
+    }
     socket.on("game:ended", onGameEnded);
     socket.on("game:full", onGameFull);
+    socket.on("game:joined", onGameJoined);
     return () => {
       socket.off("game:ended", onGameEnded);
       socket.off("game:full", onGameFull);
+      socket.off("game:joined", onGameJoined);
     };
   }, []);
 

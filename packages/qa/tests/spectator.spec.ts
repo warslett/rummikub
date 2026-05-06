@@ -21,14 +21,11 @@ test.describe("Spectator Mode", () => {
     await page3.goto(`http://localhost:5173/game/${gameCode}`);
     await page3.getByPlaceholder("Enter your name").fill("Charlie");
     await page3.getByRole("button", { name: "Join Game" }).click();
-    await page3.waitForTimeout(2000);
 
     await expect(page3.getByText("This game is full.")).toBeVisible({ timeout: 5000 });
     await expect(page3.getByRole("button", { name: "Watch as Spectator" })).toBeVisible();
 
     await page3.getByRole("button", { name: "Watch as Spectator" }).click();
-    await page3.waitForTimeout(1500);
-
     await expect(page3.getByText("Spectating")).toBeVisible({ timeout: 5000 });
 
     await ctx1.close();
@@ -51,15 +48,15 @@ test.describe("Spectator Mode", () => {
     await page3.goto(`http://localhost:5173/game/${gameCode}`);
     await page3.getByPlaceholder("Enter your name").fill("Charlie");
     await page3.getByRole("button", { name: "Join Game" }).click();
-    await page3.waitForTimeout(1000);
+    await expect(page3.getByRole("button", { name: "Watch as Spectator" })).toBeVisible({ timeout: 5000 });
     await page3.getByRole("button", { name: "Watch as Spectator" }).click();
-    await page3.waitForTimeout(1500);
+    await expect(page3.getByText("Spectating")).toBeVisible({ timeout: 5000 });
 
     const poolBefore = parseInt(await getPoolCount(page3), 10);
 
     const activePlayer = (await page1.getByText("Your turn").isVisible()) ? page1 : page2;
     await activePlayer.getByRole("button", { name: "Draw Tile" }).click();
-    await page3.waitForTimeout(1500);
+    await expect(page3.getByText("Spectating")).toBeVisible({ timeout: 5000 });
 
     const poolAfter = parseInt(await getPoolCount(page3), 10);
     expect(poolAfter).toBe(poolBefore - 1);
@@ -84,14 +81,11 @@ test.describe("Spectator Mode", () => {
     await page3.goto(`http://localhost:5173/game/${gameCode}`);
     await page3.getByPlaceholder("Enter your name").fill("Charlie");
     await page3.getByRole("button", { name: "Join Game" }).click();
-    await page3.waitForTimeout(1000);
+    await expect(page3.getByRole("button", { name: "Watch as Spectator" })).toBeVisible({ timeout: 5000 });
     await page3.getByRole("button", { name: "Watch as Spectator" }).click();
-    await page3.waitForTimeout(1500);
+    await expect(page3.getByText("Spectating")).toBeVisible({ timeout: 5000 });
 
-    const names = page3.locator("span.text-gray-400.text-sm");
-    await expect(names.nth(0)).toBeVisible();
-    await expect(names.nth(1)).toBeVisible();
-    await expect(page3.getByText("14 tiles")).toHaveCount(2);
+    await expect(page3.getByText(/tiles/)).toHaveCount(0);
 
     const rack = page3.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
     await expect(rack).toHaveCount(0);
@@ -116,9 +110,9 @@ test.describe("Spectator Mode", () => {
     await page3.goto(`http://localhost:5173/game/${gameCode}`);
     await page3.getByPlaceholder("Enter your name").fill("Charlie");
     await page3.getByRole("button", { name: "Join Game" }).click();
-    await page3.waitForTimeout(1000);
+    await expect(page3.getByRole("button", { name: "Watch as Spectator" })).toBeVisible({ timeout: 5000 });
     await page3.getByRole("button", { name: "Watch as Spectator" }).click();
-    await page3.waitForTimeout(1500);
+    await expect(page3.getByText("Spectating")).toBeVisible({ timeout: 5000 });
 
     await expect(page3.getByRole("button", { name: "Draw Tile" })).toHaveCount(0);
     await expect(page3.getByRole("button", { name: "End Turn" })).toHaveCount(0);
@@ -144,16 +138,16 @@ test.describe("Spectator Mode", () => {
     await page3.goto(`http://localhost:5173/game/${gameCode}`);
     await page3.getByPlaceholder("Enter your name").fill("Charlie");
     await page3.getByRole("button", { name: "Join Game" }).click();
-    await page3.waitForTimeout(1000);
+    await expect(page3.getByRole("button", { name: "Watch as Spectator" })).toBeVisible({ timeout: 5000 });
     await page3.getByRole("button", { name: "Watch as Spectator" }).click();
-    await page3.waitForTimeout(1500);
+    await expect(page3.getByText("Spectating")).toBeVisible({ timeout: 5000 });
 
     const turnText = await page3.locator(".text-center.text-gray-500.text-sm").textContent();
     expect(turnText).toMatch(/'s turn$/);
 
     const activePlayer = (await page1.getByText("Your turn").isVisible()) ? page1 : page2;
     await activePlayer.getByRole("button", { name: "Draw Tile" }).click();
-    await page3.waitForTimeout(1500);
+    await expect(page3.locator(".text-center.text-gray-500.text-sm")).not.toHaveText(turnText!, { timeout: 5000 });
 
     const newTurnText = await page3.locator(".text-center.text-gray-500.text-sm").textContent();
     expect(newTurnText).toMatch(/'s turn$/);
@@ -182,9 +176,9 @@ test.describe("Spectator Mode", () => {
     await page3.goto(`http://localhost:5173/game/${gameCode}`);
     await page3.getByPlaceholder("Enter your name").fill("Charlie");
     await page3.getByRole("button", { name: "Join Game" }).click();
-    await page3.waitForTimeout(1000);
+    await expect(page3.getByRole("button", { name: "Watch as Spectator" })).toBeVisible({ timeout: 5000 });
     await page3.getByRole("button", { name: "Watch as Spectator" }).click();
-    await page3.waitForTimeout(1500);
+    await expect(page3.getByText("Spectating")).toBeVisible({ timeout: 5000 });
 
     await seedGame(gameCode, {
       board: [{ id: "s1", tiles: [tile("red", 10, "red-10-a"), tile("red", 11, "red-11-a"), tile("red", 12, "red-12-a")] }],
@@ -196,9 +190,9 @@ test.describe("Spectator Mode", () => {
       currentTurnPlayerId: player1Id,
       hasInitialMeld: { [player1Id]: true, [player2Id]: true },
     });
-    await page1.waitForTimeout(1000);
-    await page2.waitForTimeout(1000);
-    await page3.waitForTimeout(1000);
+
+    await expect(page1.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg")).toBeVisible({ timeout: 5000 });
+    await expect(page2.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg")).toBeVisible({ timeout: 5000 });
 
     const rack = page1.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
     const red13 = rack.locator("button").filter({ hasText: "13" }).first();
@@ -214,8 +208,6 @@ test.describe("Spectator Mode", () => {
     await expect(page3.getByText("Game Over")).toBeVisible({ timeout: 8000 });
 
     await page1.getByRole("button", { name: "Play Again" }).click();
-    await page3.waitForTimeout(2000);
-
     await expect(page3.getByText(/Round 2/)).toBeVisible({ timeout: 8000 });
 
     await ctx1.close();
@@ -238,13 +230,11 @@ test.describe("Spectator Mode", () => {
     await page3.goto(`http://localhost:5173/game/${gameCode}`);
     await page3.getByPlaceholder("Enter your name").fill("Charlie");
     await page3.getByRole("button", { name: "Join Game" }).click();
-    await page3.waitForTimeout(1000);
+    await expect(page3.getByRole("button", { name: "Watch as Spectator" })).toBeVisible({ timeout: 5000 });
     await page3.getByRole("button", { name: "Watch as Spectator" }).click();
-    await page3.waitForTimeout(1500);
+    await expect(page3.getByText("Spectating")).toBeVisible({ timeout: 5000 });
 
     await ctx2.close();
-    await page3.waitForTimeout(3000);
-
     await expect(page3.getByText("Bob disconnected")).toBeVisible({ timeout: 8000 });
 
     await ctx1.close();
@@ -260,9 +250,7 @@ test.describe("Spectator Mode", () => {
     const gameCode = await createGame(page1, "Alice");
 
     await page3.goto(`http://localhost:5173/game/${gameCode}`);
-    await page3.waitForTimeout(1500);
-
-    await expect(page3.getByRole("heading", { name: "Join Game" })).toBeVisible();
+    await expect(page3.getByRole("heading", { name: "Join Game" })).toBeVisible({ timeout: 5000 });
     await expect(page3.getByText("This game is full.")).toHaveCount(0);
     await expect(page3.getByRole("button", { name: "Watch as Spectator" })).toHaveCount(0);
 

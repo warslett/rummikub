@@ -32,6 +32,7 @@ export type {
   GameJoinedPayload,
   GameStartedPayload,
   GameStatePayload,
+  SpectatorGameStatePayload,
   MoveRejectedPayload,
   GameEndedPayload,
   PlayerDisconnectedPayload,
