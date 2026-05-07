@@ -32,50 +32,19 @@ docker compose -f docker-compose.dev.yml run --rm dev npm run typecheck
 
 ### Step 3: Unit and Integration Tests
 
+Read [docs/e2e_testing.md](docs/e2e_testing.md) for full instructions on test conventions and running unit and integration tests in the dev container. Then run:
+
 ```
 docker compose -f docker-compose.dev.yml run --rm dev npm test
 ```
 
 ### Step 4: E2E Tests
 
-This step requires a running dev server. You MUST start one — do NOT skip this step.
-
-First, clean up any previous dev server:
-```
-docker rm -f dev-server 2>/dev/null; true
-```
-
-Start the dev server:
-```
-docker compose -f docker-compose.dev.yml run -d --name dev-server \
-  -p 3000:3000 -p 5173:5173 \
-  -e NODE_ENV=test \
-  dev \
-  sh -c "npm run build --workspace=packages/shared && npm run build --workspace=packages/server && npx concurrently 'node --watch packages/server/dist/index.js' 'npx vite packages/client --host 0.0.0.0 --port 5173'"
-```
-
-Wait for the server to be ready (~10 seconds), then verify:
-```
-curl -s http://localhost:3000/health
-```
-This must return `{"status":"ok"}`. If it doesn't, wait a few more seconds and try again.
-
-Then run the e2e tests:
-```
-docker compose -f docker-compose.dev.yml run --rm --no-deps playwright npm run test:e2e
-```
-
-After e2e tests complete (pass or fail), clean up the dev server:
-```
-docker rm -f dev-server
-```
+Read [docs/e2e_testing.md](docs/e2e_testing.md) for full instructions on starting the dev server and running e2e tests before running the full e2e test suite. Do NOT skip this step.
 
 ## Fixing Failures
 
-When a step fails:
-1. Read the error output — understand the root cause.
-2. Make the minimum change required to fix it. Follow TDD: write a failing test first (for test failures), then make the fix.
-3. Restart from Step 1 to ensure the fix didn't break earlier steps.
+When a step fails, read [docs/coding.md](docs/coding.md) for the TDD process and code style rules. Make the minimum change required to fix it, then restart from Step 1 to ensure the fix didn't break earlier steps.
 
 ## What You Must NOT Do
 
@@ -85,20 +54,10 @@ When a step fails:
 - Do NOT skip the e2e step. If the server isn't running, start it.
 - Do NOT read files just to "understand the changes". Only read files when a test or lint failure requires it.
 
-## Code Style Rules
-
-- No comments unless explicitly requested
-- Strict TypeScript — no `any`, use proper types
-- Named exports preferred over default exports
-- Functions and variables use camelCase, types/interfaces use PascalCase
-- Files use kebab-case
-
 ## Important Notes
 
 - All commands in Steps 1-3 must use the `docker compose -f docker-compose.dev.yml run --rm dev` prefix.
-- For e2e tests, `NODE_ENV=test` is required — without it the `/test/seed` endpoint returns 404.
-- After changing shared types, rebuild both shared and server packages before restarting the dev server.
-- If a dev server named `dev-server` already exists from a previous run, remove it first: `docker rm -f dev-server`.
+- E2E test details are in [docs/e2e_testing.md](docs/e2e_testing.md) — read it before Step 4.
 
 ## Output
 
