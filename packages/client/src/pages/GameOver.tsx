@@ -27,7 +27,7 @@ export function GameOver({ result }: { result: GameOverResult }) {
       )}
       <h1 className="text-5xl font-bold text-amber-400">Game Over</h1>
       {result.isStalemate && (
-        <div className="text-yellow-400 font-bold">Stalemate — pool empty, both players passed</div>
+        <div className="text-yellow-400 font-bold">Stalemate — pool empty, all players passed</div>
       )}
       <div className="bg-gray-800 p-8 rounded-lg shadow-xl w-96 space-y-4">
         <div className="text-center">

@@ -23,7 +23,7 @@ All commands below are run inside the dev container using the prefix `docker com
 | `npm run lint` | Lint all packages |
 | `npm run typecheck` | Type-check all packages |
 
-For test commands, see [testing.md](testing.md).
+For test commands, see [unit_testing.md](unit_testing.md) and [e2e_testing.md](e2e_testing.md).
 
 ## Code Style
 
@@ -51,7 +51,8 @@ For test commands, see [testing.md](testing.md).
 
 ## See Also
 
-- [testing.md](testing.md) — MUST read when writing, running, or modifying any tests.
+- [unit_testing.md](unit_testing.md) — MUST read when writing, running, or modifying unit tests.
+- [e2e_testing.md](e2e_testing.md) — MUST read when writing, running, or modifying e2e tests.
 - [docker.md](docker.md) — MUST read before running any commands in the dev container.
 - [entities.md](entities.md) — MUST read when working with game data structures.
 - [bug_fixing.md](bug_fixing.md) — MUST read when investigating or fixing bugs.

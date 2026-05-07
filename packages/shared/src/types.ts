@@ -51,27 +51,32 @@ export type TurnAction =
   | { type: "manipulate" }
   | { type: "pass" };
 
+export interface OpponentInfo {
+  id: string;
+  name: string;
+  rackSize: number;
+  score: number;
+  gamesWon: number;
+  connected: boolean;
+}
+
 export interface PlayerGameState {
   type: "player";
   id: string;
   phase: GamePhase;
   yourRack: Tile[];
-  opponentRackSize: number;
-  opponentName: string;
   yourName: string;
   board: TileSet[];
   poolSize: number;
   currentTurnPlayerId: string;
   isYourTurn: boolean;
   yourScore: number;
-  opponentScore: number;
   hasInitialMeld: boolean;
   hasPlayedThisTurn: boolean;
   roundNumber: number;
   yourGamesWon: number;
-  opponentGamesWon: number;
-  opponentConnected: boolean;
   consecutivePasses: number;
+  opponents: OpponentInfo[];
 }
 
 export interface GameCreatedPayload {
@@ -82,7 +87,10 @@ export interface GameCreatedPayload {
 
 export interface GameJoinedPayload {
   playerId: string;
-  opponentName: string;
+}
+
+export interface GameLobbyStatePayload {
+  players: { id: string; name: string }[];
 }
 
 export interface GameStartedPayload {

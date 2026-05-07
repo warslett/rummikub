@@ -2,14 +2,13 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { socket } from "../socket";
 import { useGame } from "../contexts/GameContext";
+import { MAX_PLAYERS } from "@rummikub/shared";
 
 export function Lobby() {
   const { gameCode } = useParams<{ gameCode: string }>();
   const navigate = useNavigate();
-  const { playerId, setPlayerId, setGameState, setGameCode } = useGame();
+  const { playerId, setPlayerId, setGameState, setGameCode, lobbyPlayers } = useGame();
   const [playerName, setPlayerName] = useState("");
-  const [opponentJoined, setOpponentJoined] = useState(false);
-  const [opponentName, setOpponentName] = useState<string | null>(null);
   const [hasJoined, setHasJoined] = useState(playerId !== null);
 
   useEffect(() => {
@@ -19,11 +18,6 @@ export function Lobby() {
   }, [gameCode, setGameCode]);
 
   useEffect(() => {
-    function onJoined(data: { playerId: string; opponentName: string }) {
-      setOpponentJoined(true);
-      setOpponentName(data.opponentName);
-    }
-
     function onStarted(data: { gameState: unknown }) {
       setGameState(data.gameState as Parameters<typeof setGameState>[0]);
       if (gameCode) {
@@ -31,11 +25,9 @@ export function Lobby() {
       }
     }
 
-    socket.on("game:joined", onJoined);
     socket.on("game:started", onStarted);
 
     return () => {
-      socket.off("game:joined", onJoined);
       socket.off("game:started", onStarted);
     };
   }, [setGameState, gameCode, navigate]);
@@ -60,6 +52,9 @@ export function Lobby() {
     if (!gameCode) return;
     socket.emit("game:start", { gameCode });
   }
+
+  const otherPlayers = lobbyPlayers.filter((p) => p.id !== playerId);
+  const totalPlayers = lobbyPlayers.length;
 
   if (!hasJoined) {
     return (
@@ -101,16 +96,25 @@ export function Lobby() {
           <p className="text-3xl font-mono font-bold tracking-widest text-amber-400">{gameCode}</p>
         </div>
         <div className="text-center text-gray-400 text-sm">
-          Share this code with your opponent
+          Share this code with other players
+        </div>
+        <div className="text-center text-gray-400 text-sm">
+          {totalPlayers}/{MAX_PLAYERS} players
         </div>
         <div className="border-t border-gray-600 pt-4 space-y-2">
-          <p className="text-sm text-gray-300">
-            {!opponentJoined ? "Waiting for opponent..." : `Opponent: ${opponentName}`}
-          </p>
-          {opponentJoined && (
+          {otherPlayers.length === 0 ? (
+            <p className="text-sm text-gray-300">Waiting for other players...</p>
+          ) : (
+            <div className="space-y-1">
+              {otherPlayers.map((p) => (
+                <p key={p.id} className="text-sm text-gray-300">{p.name}</p>
+              ))}
+            </div>
+          )}
+          {totalPlayers >= 2 && (
             <button
               onClick={handleStart}
-              className="w-full py-3 bg-green-600 hover:bg-green-700 rounded font-bold text-lg"
+              className="w-full py-3 bg-green-600 hover:bg-green-700 rounded font-bold text-lg mt-2"
             >
               Start Game
             </button>

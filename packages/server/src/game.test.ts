@@ -45,17 +45,28 @@ describe("Game", () => {
       expect(fresh.getState().players[0].name).toBe("Alice");
     });
 
-    it("should reject adding more than 2 players", () => {
+    it("should reject adding more than MAX_PLAYERS players", () => {
       const fresh = new Game("TEST01");
       fresh.addPlayer("p1", "Alice");
       fresh.addPlayer("p2", "Bob");
-      expect(() => fresh.addPlayer("p3", "Charlie")).toThrow();
+      fresh.addPlayer("p3", "Charlie");
+      fresh.addPlayer("p4", "Diana");
+      expect(() => fresh.addPlayer("p5", "Eve")).toThrow();
     });
 
     it("should reject duplicate player IDs", () => {
       const fresh = new Game("TEST01");
       fresh.addPlayer("p1", "Alice");
       expect(() => fresh.addPlayer("p1", "Alice2")).toThrow();
+    });
+
+    it("should accept up to MAX_PLAYERS players", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.addPlayer("p3", "Charlie");
+      fresh.addPlayer("p4", "Diana");
+      expect(fresh.getState().players).toHaveLength(4);
     });
   });
 
@@ -74,7 +85,7 @@ describe("Game", () => {
 
     it("should leave remaining tiles in the pool", () => {
       game.start();
-      const dealt = INITIAL_HAND_SIZE * 2;
+      const dealt = INITIAL_HAND_SIZE * game.getState().players.length;
       expect(game.getState().pool).toHaveLength(TOTAL_TILES - dealt);
     });
 
@@ -83,10 +94,29 @@ describe("Game", () => {
       expect(game.getState().currentTurnIndex).toBe(0);
     });
 
-    it("should require 2 players to start", () => {
+    it("should require MIN_PLAYERS to start", () => {
       const fresh = new Game("TEST01");
       fresh.addPlayer("p1", "Alice");
       expect(() => fresh.start()).toThrow();
+    });
+
+    it("should work with 3 players", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.addPlayer("p3", "Charlie");
+      expect(() => fresh.start()).not.toThrow();
+      expect(fresh.getState().pool).toHaveLength(TOTAL_TILES - INITIAL_HAND_SIZE * 3);
+    });
+
+    it("should work with 4 players", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.addPlayer("p3", "Charlie");
+      fresh.addPlayer("p4", "Diana");
+      expect(() => fresh.start()).not.toThrow();
+      expect(fresh.getState().pool).toHaveLength(TOTAL_TILES - INITIAL_HAND_SIZE * 4);
     });
 
     it("should initialize roundNumber to 1", () => {
@@ -332,7 +362,7 @@ describe("Game", () => {
   });
 
   describe("scoring", () => {
-    it("should calculate scores correctly on game end", () => {
+    it("should calculate scores correctly on game end with 2 players", () => {
       game.start();
 
       const p1 = game.getState().players[0];
@@ -344,7 +374,59 @@ describe("Game", () => {
       expect(result).not.toBeNull();
       expect(result!.winnerId).toBe("p1");
       expect(result!.winnerScore).toBe(8);
-      expect(result!.loserPenalty).toBe(-8);
+      expect(result!.losers).toHaveLength(1);
+      expect(result!.losers[0].penalty).toBe(-8);
+      expect(result!.losers[0].id).toBe("p2");
+    });
+
+    it("should calculate scores correctly with 3 players", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.addPlayer("p3", "Charlie");
+      fresh.start();
+
+      const p1 = fresh.getState().players[0];
+      const p2 = fresh.getState().players[1];
+      const p3 = fresh.getState().players[2];
+      p1.rack = [];
+      p2.rack = [makeTile("red", 5), makeTile("blue", 3)];
+      p3.rack = [makeTile("black", 7), makeTile("orange", 8)];
+
+      const result = fresh.calculateScores();
+      expect(result).not.toBeNull();
+      expect(result!.winnerId).toBe("p1");
+      expect(result!.winnerScore).toBe(8 + 15);
+      expect(result!.losers).toHaveLength(2);
+      expect(result!.losers.find((l) => l.id === "p2")!.penalty).toBe(-8);
+      expect(result!.losers.find((l) => l.id === "p3")!.penalty).toBe(-15);
+    });
+
+    it("should calculate scores correctly with 4 players", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.addPlayer("p3", "Charlie");
+      fresh.addPlayer("p4", "Diana");
+      fresh.start();
+
+      const p1 = fresh.getState().players[0];
+      const p2 = fresh.getState().players[1];
+      const p3 = fresh.getState().players[2];
+      const p4 = fresh.getState().players[3];
+      p1.rack = [];
+      p2.rack = [makeTile("red", 10)];
+      p3.rack = [makeTile("blue", 20)];
+      p4.rack = [makeTile("black", 30)];
+
+      const result = fresh.calculateScores();
+      expect(result).not.toBeNull();
+      expect(result!.winnerId).toBe("p1");
+      expect(result!.winnerScore).toBe(10 + 20 + 30);
+      expect(result!.losers).toHaveLength(3);
+      expect(result!.losers.find((l) => l.id === "p2")!.penalty).toBe(-10);
+      expect(result!.losers.find((l) => l.id === "p3")!.penalty).toBe(-20);
+      expect(result!.losers.find((l) => l.id === "p4")!.penalty).toBe(-30);
     });
 
     it("should apply joker penalty of 30 points in scoring", () => {
@@ -357,10 +439,10 @@ describe("Game", () => {
       const result = game.calculateScores();
       expect(result).not.toBeNull();
       expect(result!.winnerScore).toBe(JOKER_PENALTY + 5);
-      expect(result!.loserPenalty).toBe(-(JOKER_PENALTY + 5));
+      expect(result!.losers[0].penalty).toBe(-(JOKER_PENALTY + 5));
     });
 
-    it("should calculate stalemate scores correctly", () => {
+    it("should calculate stalemate scores correctly with 2 players", () => {
       game.start();
       const p1 = game.getState().players[0];
       const p2 = game.getState().players[1];
@@ -371,7 +453,50 @@ describe("Game", () => {
       expect(result).not.toBeNull();
       expect(result!.winnerId).toBe("p1");
       expect(result!.winnerScore).toBe(14);
-      expect(result!.loserPenalty).toBe(-14);
+      expect(result!.losers[0].penalty).toBe(-14);
+    });
+
+    it("should calculate stalemate scores correctly with 3 players", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.addPlayer("p3", "Charlie");
+      fresh.start();
+
+      fresh.getState().players[0].rack = [makeTile("red", 5)];
+      fresh.getState().players[1].rack = [makeTile("red", 10), makeTile("blue", 10)];
+      fresh.getState().players[2].rack = [makeTile("black", 7), makeTile("orange", 8)];
+
+      const result = fresh.calculateStalemateScores();
+      expect(result).not.toBeNull();
+      expect(result!.winnerId).toBe("p1");
+      expect(result!.winnerScore).toBe((20 - 5) + (15 - 5));
+      expect(result!.losers).toHaveLength(2);
+      expect(result!.losers.find((l) => l.id === "p2")!.penalty).toBe(5 - 20);
+      expect(result!.losers.find((l) => l.id === "p3")!.penalty).toBe(5 - 15);
+    });
+
+    it("should calculate stalemate scores correctly with 4 players", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.addPlayer("p3", "Charlie");
+      fresh.addPlayer("p4", "Diana");
+      fresh.start();
+
+      fresh.getState().players[0].rack = [makeTile("red", 5)];
+      fresh.getState().players[1].rack = [makeTile("red", 10)];
+      fresh.getState().players[2].rack = [makeTile("black", 20)];
+      fresh.getState().players[3].rack = [makeTile("orange", 30)];
+
+      const result = fresh.calculateStalemateScores();
+      expect(result).not.toBeNull();
+      expect(result!.winnerId).toBe("p1");
+      expect(result!.winnerScore).toBe((10 - 5) + (20 - 5) + (30 - 5));
+      expect(result!.losers).toHaveLength(3);
+      expect(result!.losers.find((l) => l.id === "p2")!.penalty).toBe(5 - 10);
+      expect(result!.losers.find((l) => l.id === "p3")!.penalty).toBe(5 - 20);
+      expect(result!.losers.find((l) => l.id === "p4")!.penalty).toBe(5 - 30);
     });
 
     it("should use joker penalty in stalemate scoring", () => {
@@ -384,7 +509,7 @@ describe("Game", () => {
       const result = game.calculateStalemateScores();
       expect(result).not.toBeNull();
       expect(result!.winnerId).toBe("p1");
-      expect(result!.loserPenalty).toBe(3 - JOKER_PENALTY);
+      expect(result!.losers[0].penalty).toBe(3 - JOKER_PENALTY);
       expect(result!.winnerScore).toBe(-(3 - JOKER_PENALTY));
     });
 
@@ -398,15 +523,51 @@ describe("Game", () => {
       const result = game.calculateStalemateScores();
       expect(result).toBeNull();
     });
+
+    it("should handle stalemate with tied lowest rack values among multiple players", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.addPlayer("p3", "Charlie");
+      fresh.start();
+
+      fresh.getState().players[0].rack = [makeTile("red", 5)];
+      fresh.getState().players[1].rack = [makeTile("blue", 5)];
+      fresh.getState().players[2].rack = [makeTile("black", 10)];
+
+      const result = fresh.calculateStalemateScores();
+      expect(result).toBeNull();
+    });
+
+    it("should apply scores correctly to multiple losers", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.addPlayer("p3", "Charlie");
+      fresh.start();
+
+      fresh.getState().players[0].rack = [];
+      fresh.getState().players[1].rack = [makeTile("red", 10)];
+      fresh.getState().players[2].rack = [makeTile("blue", 5)];
+
+      const result = fresh.calculateScores()!;
+      fresh.applyScores(result);
+
+      expect(fresh.getState().players[0].score).toBe(15);
+      expect(fresh.getState().players[1].score).toBe(-10);
+      expect(fresh.getState().players[2].score).toBe(-5);
+    });
   });
 
   describe("getPlayerState", () => {
-    it("should return own rack but only opponent rack size", () => {
+    it("should return own rack and opponents array", () => {
       game.start();
       const state = game.getPlayerState("p1");
       expect(state.type).toBe("player");
       expect(state.yourRack).toHaveLength(INITIAL_HAND_SIZE);
-      expect(state.opponentRackSize).toBe(INITIAL_HAND_SIZE);
+      expect(state.opponents).toHaveLength(1);
+      expect(state.opponents[0].rackSize).toBe(INITIAL_HAND_SIZE);
+      expect(state.opponents[0].name).toBe("Bob");
     });
 
     it("should indicate whose turn it is", () => {
@@ -427,13 +588,13 @@ describe("Game", () => {
       game.start();
       const state = game.getPlayerState("p1");
       expect(state.yourGamesWon).toBe(0);
-      expect(state.opponentGamesWon).toBe(0);
+      expect(state.opponents[0].gamesWon).toBe(0);
     });
 
-    it("should include opponentConnected", () => {
+    it("should include opponent connected status", () => {
       game.start();
       const state = game.getPlayerState("p1");
-      expect(state.opponentConnected).toBe(true);
+      expect(state.opponents[0].connected).toBe(true);
     });
 
     it("should include hasPlayedThisTurn as false when no actions taken", () => {
@@ -465,6 +626,30 @@ describe("Game", () => {
       game.undoTurn("p1");
       const state = game.getPlayerState("p1");
       expect(state.hasPlayedThisTurn).toBe(false);
+    });
+
+    it("should return multiple opponents for 3-player game", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.addPlayer("p3", "Charlie");
+      fresh.start();
+
+      const state = fresh.getPlayerState("p1");
+      expect(state.opponents).toHaveLength(2);
+      expect(state.opponents.map((o) => o.name)).toEqual(["Bob", "Charlie"]);
+    });
+
+    it("should return three opponents for 4-player game", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.addPlayer("p3", "Charlie");
+      fresh.addPlayer("p4", "Diana");
+      fresh.start();
+
+      const state = fresh.getPlayerState("p1");
+      expect(state.opponents).toHaveLength(3);
     });
   });
 
@@ -828,6 +1013,41 @@ describe("Game", () => {
       game.drawTile("p2");
       expect(game.getState().consecutivePasses).toBe(0);
     });
+
+    it("should require all N players to pass for stalemate in 3-player game", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.addPlayer("p3", "Charlie");
+      fresh.start();
+      fresh.getState().pool = [];
+
+      fresh.passTurn("p1");
+      expect(fresh.getState().phase).toBe("playing");
+      fresh.passTurn("p2");
+      expect(fresh.getState().phase).toBe("playing");
+      fresh.passTurn("p3");
+      expect(fresh.getState().phase).toBe("ended");
+    });
+
+    it("should require all 4 players to pass for stalemate in 4-player game", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.addPlayer("p3", "Charlie");
+      fresh.addPlayer("p4", "Diana");
+      fresh.start();
+      fresh.getState().pool = [];
+
+      fresh.passTurn("p1");
+      expect(fresh.getState().phase).toBe("playing");
+      fresh.passTurn("p2");
+      expect(fresh.getState().phase).toBe("playing");
+      fresh.passTurn("p3");
+      expect(fresh.getState().phase).toBe("playing");
+      fresh.passTurn("p4");
+      expect(fresh.getState().phase).toBe("ended");
+    });
   });
 
   describe("cumulative scoring and play again", () => {
@@ -851,8 +1071,7 @@ describe("Game", () => {
       game.getState().players[1].rack = [makeTile("red", 5)];
       game.checkGameEnd();
       const scores = game.calculateScores()!;
-      game.getState().players[0].score += scores.winnerScore;
-      game.getState().players[1].score += scores.loserPenalty;
+      game.applyScores(scores);
       const p1ScoreBefore = game.getState().players[0].score;
       const p2ScoreBefore = game.getState().players[1].score;
       game.startNewRound();
@@ -1025,6 +1244,30 @@ describe("Game", () => {
     });
   });
 
+  describe("3-player turn rotation", () => {
+    it("should rotate turns through 3 players", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.addPlayer("p3", "Charlie");
+      fresh.start();
+
+      expect(fresh.getState().currentTurnIndex).toBe(0);
+
+      fresh.getState().pool = [makeTile("red", 1)];
+      fresh.drawTile("p1");
+      expect(fresh.getState().currentTurnIndex).toBe(1);
+
+      fresh.getState().pool = [makeTile("blue", 1)];
+      fresh.drawTile("p2");
+      expect(fresh.getState().currentTurnIndex).toBe(2);
+
+      fresh.getState().pool = [makeTile("black", 1)];
+      fresh.drawTile("p3");
+      expect(fresh.getState().currentTurnIndex).toBe(0);
+    });
+  });
+
   describe("getSpectatorState", () => {
     beforeEach(() => {
       game.start();
@@ -1050,7 +1293,7 @@ describe("Game", () => {
       expect(state.consecutivePasses).toBe(0);
     });
 
-    it("should include both player names without rack sizes", () => {
+    it("should include all player names without rack sizes", () => {
       const state = game.getSpectatorState();
       expect(state.players).toHaveLength(2);
       const p1 = state.players.find((p) => p.id === "p1")!;
@@ -1085,6 +1328,17 @@ describe("Game", () => {
       const state = game.getSpectatorState();
       expect((state as { yourRack?: Tile[] }).yourRack).toBeUndefined();
       expect((state as { opponentRackSize?: number }).opponentRackSize).toBeUndefined();
+    });
+
+    it("should include all players in 3-player game", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.addPlayer("p3", "Charlie");
+      fresh.start();
+
+      const state = fresh.getSpectatorState();
+      expect(state.players).toHaveLength(3);
     });
   });
 });

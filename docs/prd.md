@@ -355,24 +355,23 @@ These features are explicitly deferred but should be considered in architecture 
 - [x] Inactivity expiry (24 hours; periodic cleanup via GameManager)
 - [x] Stalemate detection (consecutive passes when pool is empty end the game; lowest rack value wins)
 
-### Phase 3: Polish
+### Phase 3: Extended Features
 
 - [x] Spectator mode
-- [ ] Mobile-responsive layout
-- [ ] Drag-and-drop tile placement
-- [ ] Touch support
+- [ ] 3-4 player support
 - [ ] Valid move highlighting
 - [ ] Visual polish (traditional board game feel)
-- [ ] Accessibility improvements
 
 ### Phase 4: Future
 
 - [ ] Chat
-- [ ] 3-4 player support
+- [ ] Drag-and-drop tile placement
+- [ ] Touch support
 - [ ] AI opponent
 - [ ] Persistent storage
 - [ ] Turn timer
 - [ ] Sound effects / animations
+- [ ] Accessibility improvements
 
 ## See Also
 

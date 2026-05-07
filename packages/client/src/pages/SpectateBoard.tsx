@@ -1,34 +1,15 @@
-import { useEffect, useState } from "react";
 import { useGame } from "../contexts/GameContext";
-import { socket } from "../socket";
 import { Board, Pool } from "../components/GameBoard";
-import type { PlayerDisconnectedPayload, PlayerReconnectedPayload } from "@rummikub/shared";
 
 export function SpectateBoard() {
   const { spectatorState } = useGame();
-  const [opponentDisconnected, setOpponentDisconnected] = useState<string | null>(null);
-
-  useEffect(() => {
-    function onDisconnected(data: PlayerDisconnectedPayload) {
-      setOpponentDisconnected(data.playerName);
-    }
-    function onReconnected(data: PlayerReconnectedPayload) {
-      if (opponentDisconnected === data.playerName) {
-        setOpponentDisconnected(null);
-      }
-    }
-    socket.on("player:disconnected", onDisconnected);
-    socket.on("player:reconnected", onReconnected);
-    return () => {
-      socket.off("player:disconnected", onDisconnected);
-      socket.off("player:reconnected", onReconnected);
-    };
-  }, [opponentDisconnected]);
 
   if (!spectatorState) return null;
 
   const { board, poolSize, currentTurnPlayerId, players, roundNumber, consecutivePasses } = spectatorState;
   const currentPlayer = players.find((p) => p.id === currentTurnPlayerId);
+
+  const anyDisconnected = players.some((p) => !p.connected);
 
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-4">
@@ -36,9 +17,9 @@ export function SpectateBoard() {
         <span className="bg-gray-800/50 px-4 py-1 rounded text-amber-400 text-sm">Spectating</span>
       </div>
 
-      {opponentDisconnected && (
+      {anyDisconnected && (
         <div className="bg-yellow-600 text-white text-center py-2 rounded font-bold">
-          {opponentDisconnected} disconnected — waiting for reconnection...
+          Player disconnected — waiting for reconnection...
         </div>
       )}
 
@@ -55,9 +36,9 @@ export function SpectateBoard() {
       </div>
 
       <div className="text-sm text-gray-400">
-        Round {roundNumber} · {players[0]?.name}: {players[0]?.score} pts · {players[1]?.name}: {players[1]?.score} pts
-        {(players[0]?.gamesWon > 0 || players[1]?.gamesWon > 0) && (
-          <span> · Wins: {players[0]?.gamesWon}–{players[1]?.gamesWon}</span>
+        Round {roundNumber} · {players.map((p) => `${p.name}: ${p.score} pts`).join(" · ")}
+        {players.some((p) => p.gamesWon > 0) && (
+          <span> · Wins: {players.map((p) => `${p.name} ${p.gamesWon}`).join(", ")}</span>
         )}
       </div>
 

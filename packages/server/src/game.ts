@@ -9,8 +9,10 @@ import {
   shuffleTiles,
   JOKER_COLOR,
   JOKER_PENALTY,
+  MAX_PLAYERS,
+  MIN_PLAYERS,
 } from "@rummikub/shared";
-import type { TileSet, Tile, Player, GameState, GamePhase, PlayerGameState, SpectatorGameState } from "@rummikub/shared";
+import type { TileSet, Tile, Player, GameState, GamePhase, PlayerGameState, SpectatorGameState, OpponentInfo } from "@rummikub/shared";
 
 function isJoker(tile: Tile): boolean {
   return tile.color === JOKER_COLOR;
@@ -24,9 +26,7 @@ export interface GameEndResult {
   winnerId: string;
   winnerName: string;
   winnerScore: number;
-  loserPenalty: number;
-  loserId: string;
-  loserName: string;
+  losers: { id: string; name: string; penalty: number; rackValue: number }[];
 }
 
 export interface SeedState {
@@ -61,7 +61,7 @@ export class Game {
     if (this.state.phase !== "lobby") {
       throw new Error("Cannot add players after game has started");
     }
-    if (this.state.players.length >= 2) {
+    if (this.state.players.length >= MAX_PLAYERS) {
       throw new Error("Game is full");
     }
     if (this.state.players.some((p) => p.id === playerId)) {
@@ -79,8 +79,8 @@ export class Game {
   }
 
   start(): void {
-    if (this.state.players.length < 2) {
-      throw new Error("Need 2 players to start");
+    if (this.state.players.length < MIN_PLAYERS) {
+      throw new Error("Need at least 2 players to start");
     }
 
     const allTiles = shuffleTiles(generateAllTiles());
@@ -288,7 +288,7 @@ export class Game {
     this.state.consecutivePasses++;
     this.state.turnActions = [];
 
-    if (this.state.consecutivePasses >= 2) {
+    if (this.state.consecutivePasses >= this.state.players.length) {
       this.endGameStalemate();
       return;
     }
@@ -311,17 +311,20 @@ export class Game {
     if (!endResult) return null;
 
     const winner = this.state.players.find((p) => p.id === endResult.winnerId)!;
-    const loser = this.state.players.find((p) => p.id !== endResult.winnerId)!;
+    const losers = this.state.players
+      .filter((p) => p.id !== endResult.winnerId)
+      .map((p) => {
+        const rackValue = this.calculateRackValue(p);
+        return { id: p.id, name: p.name, penalty: -rackValue, rackValue };
+      });
 
-    const loserRackValue = this.calculateRackValue(loser);
+    const winnerScore = losers.reduce((sum, l) => sum + l.rackValue, 0);
 
     return {
       winnerId: winner.id,
       winnerName: winner.name,
-      winnerScore: loserRackValue,
-      loserId: loser.id,
-      loserName: loser.name,
-      loserPenalty: -loserRackValue,
+      winnerScore,
+      losers,
     };
   }
 
@@ -336,30 +339,38 @@ export class Game {
 
     if (minValue === maxValue) return null;
 
-    const winner = values.find((v) => v.rackValue === minValue)!.player;
-    const loser = values.find((v) => v.rackValue !== minValue)!.player;
-    const loserRackValue = values.find((v) => v.rackValue !== minValue)!.rackValue;
+    const minPlayers = values.filter((v) => v.rackValue === minValue);
+    if (minPlayers.length > 1) return null;
+
+    const winner = minPlayers[0].player;
     const winnerRackValue = minValue;
+
+    const losers = values
+      .filter((v) => v.player.id !== winner.id)
+      .map((v) => ({
+        id: v.player.id,
+        name: v.player.name,
+        penalty: winnerRackValue - v.rackValue,
+        rackValue: v.rackValue,
+      }));
+
+    const winnerScore = losers.reduce((sum, l) => sum + (l.rackValue - winnerRackValue), 0);
 
     return {
       winnerId: winner.id,
       winnerName: winner.name,
-      winnerScore: loserRackValue - winnerRackValue,
-      loserId: loser.id,
-      loserName: loser.name,
-      loserPenalty: winnerRackValue - loserRackValue,
+      winnerScore,
+      losers,
     };
   }
 
   applyScores(result: GameEndResult): void {
     const winner = this.state.players.find((p) => p.id === result.winnerId);
-    const loser = this.state.players.find((p) => p.id === result.loserId);
     if (winner) winner.score += result.winnerScore;
-    if (loser) loser.score += result.loserPenalty;
-  }
-
-  applyStalemateScores(result: GameEndResult): void {
-    this.applyScores(result);
+    for (const loser of result.losers) {
+      const player = this.state.players.find((p) => p.id === loser.id);
+      if (player) player.score += loser.penalty;
+    }
   }
 
   getRackValue(playerId: string): number {
@@ -429,34 +440,37 @@ export class Game {
 
   getPlayerState(playerId: string): PlayerGameState {
     const player = this.getPlayer(playerId);
-    const opponent = this.state.players.find((p) => p.id !== playerId);
-    if (!opponent) {
-      throw new Error("No opponent found");
-    }
     const currentPlayer = this.state.players[this.state.currentTurnIndex];
     const hasPlayedThisTurn = currentPlayer.id === playerId && this.state.turnActions.length > 0;
+
+    const opponents: OpponentInfo[] = this.state.players
+      .filter((p) => p.id !== playerId)
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        rackSize: p.rack.length,
+        score: p.score,
+        gamesWon: p.gamesWon,
+        connected: p.connected,
+      }));
 
     return {
       type: "player",
       id: this.state.id,
       phase: this.state.phase,
       yourRack: player.rack,
-      opponentRackSize: opponent.rack.length,
-      opponentName: opponent.name,
       yourName: player.name,
       board: this.state.board,
       poolSize: this.state.pool.length,
       currentTurnPlayerId: currentPlayer.id,
       isYourTurn: currentPlayer.id === playerId,
       yourScore: player.score,
-      opponentScore: opponent.score,
       hasInitialMeld: player.hasInitialMeld,
       hasPlayedThisTurn,
       roundNumber: this.state.roundNumber,
       yourGamesWon: player.gamesWon,
-      opponentGamesWon: opponent.gamesWon,
-      opponentConnected: opponent.connected,
       consecutivePasses: this.state.consecutivePasses,
+      opponents,
     };
   }
 

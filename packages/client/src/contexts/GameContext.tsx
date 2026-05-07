@@ -1,6 +1,11 @@
 import { createContext, useContext } from "react";
 import type { PlayerGameState, SpectatorGameState } from "@rummikub/shared";
 
+interface LobbyPlayer {
+  id: string;
+  name: string;
+}
+
 interface GameContextValue {
   gameState: PlayerGameState | null;
   setGameState: (state: PlayerGameState | null) => void;
@@ -14,6 +19,8 @@ interface GameContextValue {
   setIsSpectator: (spectator: boolean) => void;
   spectatorState: SpectatorGameState | null;
   setSpectatorState: (state: SpectatorGameState | null) => void;
+  lobbyPlayers: LobbyPlayer[];
+  setLobbyPlayers: (players: LobbyPlayer[]) => void;
 }
 
 export const GameContext = createContext<GameContextValue>({
@@ -29,6 +36,8 @@ export const GameContext = createContext<GameContextValue>({
   setIsSpectator: () => {},
   spectatorState: null,
   setSpectatorState: () => {},
+  lobbyPlayers: [],
+  setLobbyPlayers: () => {},
 });
 
 export function useGame() {

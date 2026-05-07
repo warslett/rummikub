@@ -16,6 +16,8 @@ export {
   JOKER_COLOR,
   JOKER_PENALTY,
   JOKER_COUNT,
+  MIN_PLAYERS,
+  MAX_PLAYERS,
 } from "./constants.js";
 export type { Color, Value } from "./constants.js";
 export type {
@@ -28,8 +30,10 @@ export type {
   TurnAction,
   TurnSnapshot,
   PlayerGameState,
+  OpponentInfo,
   GameCreatedPayload,
   GameJoinedPayload,
+  GameLobbyStatePayload,
   GameStartedPayload,
   GameStatePayload,
   SpectatorGameStatePayload,

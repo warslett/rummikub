@@ -19,3 +19,5 @@ export const MAX_GROUP_SIZE = 4;
 export const GAME_CODE_LENGTH = 6;
 
 export const GAME_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+export const MIN_PLAYERS = 2;
+export const MAX_PLAYERS = 4;

@@ -85,7 +85,7 @@ test.describe("Spectator Mode", () => {
     await page3.getByRole("button", { name: "Watch as Spectator" }).click();
     await expect(page3.getByText("Spectating")).toBeVisible({ timeout: 5000 });
 
-    await expect(page3.getByText(/tiles/)).toHaveCount(0);
+    await expect(page3.locator("span", { hasText: /tiles/ })).toHaveCount(0);
 
     const rack = page3.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
     await expect(rack).toHaveCount(0);
@@ -235,7 +235,7 @@ test.describe("Spectator Mode", () => {
     await expect(page3.getByText("Spectating")).toBeVisible({ timeout: 5000 });
 
     await ctx2.close();
-    await expect(page3.getByText("Bob disconnected")).toBeVisible({ timeout: 8000 });
+    await expect(page3.getByText("Player disconnected")).toBeVisible({ timeout: 8000 });
 
     await ctx1.close();
     await ctx3.close();

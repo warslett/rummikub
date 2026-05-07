@@ -7,7 +7,7 @@ test.describe("Game Creation", () => {
     const gameCode = await createGame(page, "Alice");
 
     expect(gameCode).toMatch(/^[A-Z0-9]{6}$/);
-    await expect(page.getByText("Waiting for opponent...")).toBeVisible();
+    await expect(page.getByText("Waiting for other players...")).toBeVisible();
     await expect(page.getByRole("button", { name: "Start Game" })).toBeHidden();
     await context.close();
   });
@@ -36,7 +36,7 @@ test.describe("Game Joining", () => {
     await joinGame(page2, "Bob", gameCode);
 
     await expect(page2.locator("p.text-3xl.font-mono")).toContainText(gameCode);
-    await expect(page1.getByText("Opponent: Bob")).toBeVisible();
+    await expect(page1.getByText("Bob")).toBeVisible();
     await expect(page1.getByRole("button", { name: "Start Game" })).toBeVisible();
 
     await ctx1.close();
@@ -47,23 +47,31 @@ test.describe("Game Joining", () => {
     const ctx1 = await browser.newContext();
     const ctx2 = await browser.newContext();
     const ctx3 = await browser.newContext();
+    const ctx4 = await browser.newContext();
+    const ctx5 = await browser.newContext();
     const page1 = await ctx1.newPage();
     const page2 = await ctx2.newPage();
     const page3 = await ctx3.newPage();
+    const page4 = await ctx4.newPage();
+    const page5 = await ctx5.newPage();
 
     const gameCode = await createGame(page1, "Alice");
     await joinGame(page2, "Bob", gameCode);
+    await joinGame(page3, "Charlie", gameCode);
+    await joinGame(page4, "Diana", gameCode);
 
-    await page3.goto(CLIENT_URL);
-    await page3.getByPlaceholder("Enter your name").fill("Charlie");
-    await page3.getByPlaceholder("Enter game code").fill(gameCode);
-    await page3.getByRole("button", { name: "Join Game" }).click();
+    await page5.goto(`${CLIENT_URL}/game/${gameCode}`);
+    await page5.getByPlaceholder("Enter your name").fill("Eve");
+    await page5.getByRole("button", { name: "Join Game" }).click();
 
-    await expect(page3.getByText(/Game is full/i)).toBeVisible();
+    await expect(page5.getByText("This game is full.")).toBeVisible({ timeout: 5000 });
+    await expect(page5.getByRole("button", { name: "Watch as Spectator" })).toBeVisible();
 
     await ctx1.close();
     await ctx2.close();
     await ctx3.close();
+    await ctx4.close();
+    await ctx5.close();
   });
 
   test("TC-08: Join game via direct URL", async ({ browser }) => {
@@ -76,7 +84,7 @@ test.describe("Game Joining", () => {
     await joinGameViaLobby(page2, "Bob", gameCode);
 
     await expect(page2.locator("p.text-3xl.font-mono")).toContainText(gameCode);
-    await expect(page1.getByText("Opponent: Bob")).toBeVisible();
+    await expect(page1.getByText("Bob")).toBeVisible();
 
     await ctx1.close();
     await ctx2.close();
@@ -161,7 +169,7 @@ test.describe("Turn-Based Gameplay", () => {
     await startGame(page1, page2);
 
     const waitingPlayer = (await page1.getByText("Your turn").isVisible()) ? page2 : page1;
-    await expect(waitingPlayer.getByText("Waiting for opponent...")).toBeVisible();
+    await expect(waitingPlayer.getByText("Waiting for other players...")).toBeVisible();
     await expect(waitingPlayer.getByRole("button", { name: "Draw Tile" })).toBeHidden();
 
     await ctx1.close();

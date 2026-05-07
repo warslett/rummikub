@@ -25,6 +25,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [gameEnded, setGameEnded] = useState<GameEndedData | null>(null);
   const [isSpectator, setIsSpectator] = useState(false);
+  const [lobbyPlayers, setLobbyPlayers] = useState<{ id: string; name: string }[]>([]);
   const [spectatorState, setSpectatorState] = useState<SpectatorGameState | null>(null);
 
   useEffect(() => {
@@ -78,8 +79,12 @@ export function App() {
       setGameCode(code);
     });
 
-    socket.on("game:joined", ({ playerId: pid }: { playerId: string; opponentName: string }) => {
+    socket.on("game:joined", ({ playerId: pid }: { playerId: string }) => {
       setPlayerId(pid);
+    });
+
+    socket.on("game:lobbyState", ({ players }: { players: { id: string; name: string }[] }) => {
+      setLobbyPlayers(players);
     });
 
     return () => {
@@ -91,13 +96,14 @@ export function App() {
       socket.off("game:error");
       socket.off("game:created");
       socket.off("game:joined");
+      socket.off("game:lobbyState");
     };
   }, []);
 
   const clearError = useCallback(() => setError(null), []);
 
   return (
-    <GameContext.Provider value={{ gameState, setGameState, playerId, setPlayerId, gameCode, setGameCode, error, setError: clearError, isSpectator, setIsSpectator, spectatorState, setSpectatorState }}>
+    <GameContext.Provider value={{ gameState, setGameState, playerId, setPlayerId, gameCode, setGameCode, error, setError: clearError, isSpectator, setIsSpectator, spectatorState, setSpectatorState, lobbyPlayers, setLobbyPlayers }}>
       <BrowserRouter>
         <div className="min-h-screen bg-gray-900 text-white">
           {error && (

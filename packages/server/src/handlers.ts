@@ -1,5 +1,6 @@
 import { Server as SocketIOServer } from "socket.io";
 import { GameManager } from "./gameManager.js";
+import { MAX_PLAYERS } from "@rummikub/shared";
 import type { TileSet } from "@rummikub/shared";
 import type { SeedState } from "./game.js";
 import type { SpectatorGameState } from "@rummikub/shared";
@@ -31,6 +32,9 @@ export function registerHandlers(io: SocketIOServer): void {
 
       const gameUrl = `/game/${gameCode}`;
       socket.emit("game:created", { gameCode, gameUrl, playerId });
+
+      const players = game.getState().players.map((p) => ({ id: p.id, name: p.name }));
+      io.to(gameCode).emit("game:lobbyState", { players });
     });
 
     socket.on("game:join", ({ gameCode, playerName }: { gameCode: string; playerName: string }) => {
@@ -41,7 +45,7 @@ export function registerHandlers(io: SocketIOServer): void {
       }
 
       const state = game.getState();
-      if (state.players.length >= 2) {
+      if (state.players.length >= MAX_PLAYERS || state.phase !== "lobby") {
         socket.emit("game:full", { gameCode });
         return;
       }
@@ -53,9 +57,10 @@ export function registerHandlers(io: SocketIOServer): void {
       data.gameCode = gameCode;
       socket.join(gameCode);
 
-      const opponent = state.players[0];
-      socket.emit("game:joined", { playerId, opponentName: opponent.name });
-      socket.to(gameCode).emit("game:joined", { playerId: opponent.id, opponentName: playerName });
+      socket.emit("game:joined", { playerId });
+
+      const players = game.getState().players.map((p) => ({ id: p.id, name: p.name }));
+      io.to(gameCode).emit("game:lobbyState", { players });
     });
 
     socket.on("game:spectate", ({ gameCode }: { gameCode: string }) => {
@@ -66,7 +71,7 @@ export function registerHandlers(io: SocketIOServer): void {
       }
 
       const state = game.getState();
-      if (state.players.length < 2) {
+      if (state.players.length < MAX_PLAYERS && state.phase === "lobby") {
         socket.emit("game:error", { message: "Game is not full yet" });
         return;
       }
@@ -223,19 +228,20 @@ export function registerHandlers(io: SocketIOServer): void {
       const state = game.getState();
       if (state.phase === "ended") {
         const scores = game.calculateStalemateScores();
-      if (scores) {
-        game.applyStalemateScores(scores);
-        const players = state.players;
-        const stalemateWinner = players.find((p) => p.id === scores.winnerId);
-        if (stalemateWinner) stalemateWinner.gamesWon++;
-        io.to(data.gameCode).emit("game:ended", {
+        if (scores) {
+          game.applyScores(scores);
+          const players = state.players;
+          const stalemateWinner = players.find((p) => p.id === scores.winnerId);
+          if (stalemateWinner) stalemateWinner.gamesWon++;
+          const loserMap = new Map(scores.losers.map((l) => [l.id, l]));
+          io.to(data.gameCode).emit("game:ended", {
             winnerId: scores.winnerId,
             winnerName: scores.winnerName,
             scores: players.map((p) => ({
               playerId: p.id,
               name: p.name,
-              score: p.id === scores.winnerId ? scores.winnerScore : scores.loserPenalty,
-              rackValue: game.getRackValue(p.id),
+              score: p.id === scores.winnerId ? scores.winnerScore : (loserMap.get(p.id)?.penalty ?? 0),
+              rackValue: p.id === scores.winnerId ? 0 : game.getRackValue(p.id),
             })),
             roundNumber: state.roundNumber,
             isStalemate: true,
@@ -288,6 +294,7 @@ export function registerHandlers(io: SocketIOServer): void {
         playerId,
         playerName: game.getState().players.find((p) => p.id === playerId)!.name,
       });
+      emitPlayerStates(io, game, gameCode);
     });
 
     if (process.env.NODE_ENV === "test") {
@@ -320,6 +327,9 @@ export function registerHandlers(io: SocketIOServer): void {
               playerId: player.id,
               playerName: player.name,
             });
+            if (game.getState().phase === "playing") {
+              emitPlayerStates(io, game, data.gameCode);
+            }
           }
         }
       }
@@ -360,13 +370,14 @@ function emitGameEnded(io: SocketIOServer, game: ReturnType<GameManager["getGame
     game.applyScores(scores);
     const winner = state.players.find((p) => p.id === endResult.winnerId);
     if (winner) winner.gamesWon++;
+    const loserMap = new Map(scores.losers.map((l) => [l.id, l]));
     io.to(gameCode).emit("game:ended", {
       winnerId: endResult.winnerId,
       winnerName: endResult.winnerName,
       scores: state.players.map((p) => ({
         playerId: p.id,
         name: p.name,
-        score: p.id === endResult.winnerId ? scores.winnerScore : scores.loserPenalty,
+        score: p.id === endResult.winnerId ? scores.winnerScore : (loserMap.get(p.id)?.penalty ?? 0),
         rackValue: p.id === endResult.winnerId ? 0 : game.getRackValue(p.id),
       })),
       roundNumber: state.roundNumber,

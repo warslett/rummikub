@@ -14,7 +14,7 @@ test.describe("Reconnection", () => {
 
     await ctx1.close();
 
-    await expect(page2.getByText("Opponent disconnected")).toBeVisible({ timeout: 8000 });
+    await expect(page2.getByText("Player disconnected")).toBeVisible({ timeout: 8000 });
 
     await ctx2.close();
   });
@@ -33,7 +33,7 @@ test.describe("Reconnection", () => {
     const player1GameCode = await page1.evaluate(() => localStorage.getItem("rummikub_gameCode") ?? "");
 
     await ctx1.close();
-    await expect(page2.getByText("Opponent disconnected")).toBeVisible({ timeout: 8000 });
+    await expect(page2.getByText("Player disconnected")).toBeVisible({ timeout: 8000 });
 
     const ctx3 = await browser.newContext();
     const page3 = await ctx3.newPage();
@@ -47,7 +47,7 @@ test.describe("Reconnection", () => {
     await page3.waitForTimeout(2000);
 
     await page2.waitForTimeout(1000);
-    const disconnectedGone = await page2.getByText("Opponent disconnected").isVisible().catch(() => false);
+    const disconnectedGone = await page2.getByText("Player disconnected").isVisible().catch(() => false);
     expect(disconnectedGone).toBe(false);
 
     await ctx2.close();

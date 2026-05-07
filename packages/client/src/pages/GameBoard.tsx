@@ -4,7 +4,6 @@ import { socket } from "../socket";
 import { Board, Rack, Pool, OpponentInfo, Controls } from "../components/GameBoard";
 import { isValidBoard, formSetsFromTiles, JOKER_COLOR } from "@rummikub/shared";
 import type { Tile, TileSet } from "@rummikub/shared";
-
 function isJoker(tile: Tile): boolean {
   return tile.color === JOKER_COLOR;
 }
@@ -50,7 +49,6 @@ export function GameBoard() {
   const [workingRack, setWorkingRack] = useState<Tile[] | null>(null);
   const [selectedTileId, setSelectedTileId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [opponentDisconnected, setOpponentDisconnected] = useState(false);
   const prevIsYourTurn = useRef(gameState?.isYourTurn);
 
   const isYourTurn = gameState?.isYourTurn ?? false;
@@ -76,20 +74,8 @@ export function GameBoard() {
     prevIsYourTurn.current = gameState.isYourTurn;
   }, [gameState?.isYourTurn]);
 
-  useEffect(() => {
-    function onDisconnected() {
-      setOpponentDisconnected(true);
-    }
-    function onReconnected() {
-      setOpponentDisconnected(false);
-    }
-    socket.on("player:disconnected", onDisconnected);
-    socket.on("player:reconnected", onReconnected);
-    return () => {
-      socket.off("player:disconnected", onDisconnected);
-      socket.off("player:reconnected", onReconnected);
-    };
-  }, []);
+  const anyOpponentDisconnected = gameState ? gameState.opponents.some((o) => !o.connected) : false;
+  const allOpponentsDisconnected = gameState ? gameState.opponents.length > 0 && gameState.opponents.every((o) => !o.connected) : false;
 
   if (!gameState || !playerId) return null;
 
@@ -358,25 +344,30 @@ export function GameBoard() {
 
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-4">
-      {opponentDisconnected && (
+      {anyOpponentDisconnected && (
         <div className="bg-yellow-600 text-white text-center py-2 rounded font-bold">
-          Opponent disconnected — waiting for reconnection...
+          Player disconnected — waiting for reconnection...
         </div>
       )}
 
       <div className="flex justify-between items-center">
-        <OpponentInfo
-          name={gameState.opponentName}
-          rackSize={gameState.opponentRackSize}
-          disconnected={opponentDisconnected}
-        />
+        <div className="flex gap-2">
+          {gameState.opponents.map((opp) => (
+            <OpponentInfo
+              key={opp.id}
+              name={opp.name}
+              rackSize={opp.rackSize}
+              disconnected={!opp.connected}
+            />
+          ))}
+        </div>
         <Pool count={gameState.poolSize} />
       </div>
 
       <div className="text-sm text-gray-400">
-        Round {gameState.roundNumber} · You: {gameState.yourScore} pts · {gameState.opponentName}: {gameState.opponentScore} pts
-        {(gameState.yourGamesWon > 0 || gameState.opponentGamesWon > 0) && (
-          <span> · Wins: {gameState.yourGamesWon}–{gameState.opponentGamesWon}</span>
+        Round {gameState.roundNumber} · You: {gameState.yourScore} pts · {gameState.opponents.map((o) => `${o.name}: ${o.score}`).join(" · ")}
+        {(gameState.yourGamesWon > 0 || gameState.opponents.some((o) => o.gamesWon > 0)) && (
+          <span> · Wins: You {gameState.yourGamesWon}{gameState.opponents.map((o) => `, ${o.name} ${o.gamesWon}`).join("")}</span>
         )}
       </div>
 
@@ -413,7 +404,7 @@ export function GameBoard() {
         onEndTurn={handleEndTurn}
         onDraw={handleDraw}
         onPass={handlePass}
-        opponentDisconnected={opponentDisconnected}
+        allOpponentsDisconnected={allOpponentsDisconnected}
       />
 
       <Rack
@@ -429,7 +420,10 @@ export function GameBoard() {
             : hasPlayedThisTurn
               ? "Your turn — play more tiles or end your turn"
               : "Your turn — select tiles from your rack and play"
-          : `${gameState.opponentName}'s turn`}
+          : (() => {
+              const currentOpponent = gameState.opponents.find((o) => o.id === gameState.currentTurnPlayerId);
+              return currentOpponent ? `${currentOpponent.name}'s turn` : "Other player's turn";
+            })()}
       </div>
     </div>
   );

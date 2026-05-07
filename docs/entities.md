@@ -17,7 +17,7 @@
 
 | Relationship | Cardinality | Description |
 |-------------|-------------|-------------|
-| Game → Player | 1:N (exactly 2) | A game has exactly two players once started. |
+| Game → Player | 1:N (2-4) | A game has 2-4 players once started. |
 | Game → TileSet | 1:N | A game's board contains zero or more tile sets. |
 | Game → Tile (pool) | 1:N | A game's pool contains zero or more tiles available to draw. |
 | Game → TurnAction | 1:N | A game records the actions taken during the current turn. Cleared on turn end. |
@@ -31,7 +31,7 @@
 ```mermaid
 erDiagram
     GameManager ||--o{ Game : "manages"
-    Game ||--|{ Player : "has exactly 2"
+    Game ||--|{ Player : "has 2-4"
     Game ||--o{ TileSet : "board contains"
     Game ||--o{ Tile : "pool contains"
     Game ||--o{ TurnAction : "records"

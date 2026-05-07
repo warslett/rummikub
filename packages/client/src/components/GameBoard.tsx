@@ -169,7 +169,7 @@ export function Controls({
   onEndTurn,
   onDraw,
   onPass,
-  opponentDisconnected,
+  allOpponentsDisconnected,
 }: {
   isYourTurn: boolean;
   selectedCount: number;
@@ -181,16 +181,16 @@ export function Controls({
   onEndTurn: () => void;
   onDraw: () => void;
   onPass: () => void;
-  opponentDisconnected?: boolean;
+  allOpponentsDisconnected?: boolean;
 }) {
   if (!isYourTurn) {
-    return <div className="text-center text-gray-500 py-2">Waiting for opponent...</div>;
+    return <div className="text-center text-gray-500 py-2">Waiting for other players...</div>;
   }
   return (
     <div className="flex gap-3 justify-center py-2 flex-wrap">
       <button
         onClick={onPlay}
-        disabled={selectedCount < 3 || opponentDisconnected}
+        disabled={selectedCount < 3 || allOpponentsDisconnected}
         className="px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed rounded font-bold"
       >
         Play Selected ({selectedCount})
@@ -205,14 +205,14 @@ export function Controls({
       )}
       <button
         onClick={onEndTurn}
-        disabled={!hasPlayedThisTurn || opponentDisconnected}
+        disabled={!hasPlayedThisTurn || allOpponentsDisconnected}
         className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed rounded font-bold"
       >
         End Turn
       </button>
       <button
         onClick={onDraw}
-        disabled={hasPlayedThisTurn || poolSize === 0 || opponentDisconnected}
+        disabled={hasPlayedThisTurn || poolSize === 0 || allOpponentsDisconnected}
         className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded font-bold"
       >
         Draw Tile
@@ -220,7 +220,7 @@ export function Controls({
       {poolSize === 0 && (
         <button
           onClick={onPass}
-          disabled={hasPlayedThisTurn || opponentDisconnected}
+          disabled={hasPlayedThisTurn || allOpponentsDisconnected}
           className="px-4 py-2 bg-gray-600 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed rounded font-bold"
         >
           Pass
