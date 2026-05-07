@@ -75,7 +75,9 @@ docs/              — Project documentation
 | [docs/rules.md](docs/rules.md) | Official Rummikub rules (Sabra variant) — sets, manipulation, jokers, scoring, time limits |
 | [docs/entities.md](docs/entities.md) | Entity model — Tile, TileSet, Player, Pool, Game, TurnAction, TurnSnapshot, GameManager; relationships and ER diagram |
 | [docs/coding.md](docs/coding.md) | Coding standards — mandatory TDD process, commands, code style, architecture rules, common pitfalls |
-| [docs/testing.md](docs/testing.md) | Testing guide — unit/integration/e2e commands, Playwright setup, testing conventions |
+| [docs/unit_testing.md](docs/unit_testing.md) | Unit/integration testing — Vitest commands, conventions, what to test, mocking guidelines |
+| [docs/e2e_testing.md](docs/e2e_testing.md) | End-to-end testing — Playwright setup, commands, helpers, test conventions |
+| [docs/plan_execution.md](docs/plan_execution.md) | Plan execution — how to execute an existing implementation plan step by step |
 | [docs/planning.md](docs/planning.md) | Planning process — how to create implementation plans for features and changes |
 | [docs/docker.md](docs/docker.md) | Docker guide — dev/prod environments, running commands, debugging container issues |
 | [docs/bug_fixing.md](docs/bug_fixing.md) | Bug fixing process — reproduce with e2e test, investigate, fix with TDD, verify; common investigation paths |
