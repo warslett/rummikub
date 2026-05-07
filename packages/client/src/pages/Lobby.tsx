@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { socket } from "../socket";
 import { useGame } from "../contexts/GameContext";
@@ -7,9 +7,10 @@ import { MAX_PLAYERS } from "@rummikub/shared";
 export function Lobby() {
   const { gameCode } = useParams<{ gameCode: string }>();
   const navigate = useNavigate();
-  const { playerId, setPlayerId, setGameState, setGameCode, lobbyPlayers } = useGame();
+  const { playerId, setPlayerId, setGameState, gameCode: contextGameCode, setGameCode, lobbyPlayers } = useGame();
   const [playerName, setPlayerName] = useState("");
-  const [hasJoined, setHasJoined] = useState(playerId !== null);
+  const [hasJoined, setHasJoined] = useState(playerId !== null && contextGameCode === gameCode);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (gameCode) {
@@ -55,6 +56,33 @@ export function Lobby() {
 
   const otherPlayers = lobbyPlayers.filter((p) => p.id !== playerId);
   const totalPlayers = lobbyPlayers.length;
+  const gameUrl = gameCode ? `${window.location.origin}/lobby/${gameCode}` : "";
+
+  const handleCopy = useCallback(() => {
+    if (!gameUrl) return;
+    const onSuccess = () => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    };
+    const fallback = () => {
+      const textarea = document.createElement("textarea");
+      textarea.value = gameUrl;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const success = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      if (success) {
+        onSuccess();
+      }
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(gameUrl).then(onSuccess).catch(fallback);
+    } else {
+      fallback();
+    }
+  }, [gameUrl]);
 
   if (!hasJoined) {
     return (
@@ -94,6 +122,16 @@ export function Lobby() {
         <div className="text-center">
           <p className="text-gray-400 text-sm">Game Code</p>
           <p className="text-3xl font-mono font-bold tracking-widest text-amber-400">{gameCode}</p>
+        </div>
+        <div className="text-center">
+          <p className="text-gray-400 text-sm mb-1">Game URL</p>
+          <p className="text-sm text-gray-300 break-all">{gameUrl}</p>
+          <button
+            onClick={handleCopy}
+            className="mt-2 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium"
+          >
+            {copied ? "Copied!" : "Copy"}
+          </button>
         </div>
         <div className="text-center text-gray-400 text-sm">
           Share this code with other players

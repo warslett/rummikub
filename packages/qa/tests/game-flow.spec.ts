@@ -1,4 +1,4 @@
-import { test, expect, CLIENT_URL, createGame, joinGame, joinGameViaLobby, startGame, getRackTileCount, getPoolCount } from "./helpers";
+import { test, expect, CLIENT_URL, createGame, joinGame, startGame, getRackTileCount, getPoolCount } from "./helpers";
 
 test.describe("Game Creation", () => {
   test("TC-04: Create a game successfully", async ({ browser }) => {
@@ -15,9 +15,8 @@ test.describe("Game Creation", () => {
   test("TC-05: Join with invalid game code", async ({ browser }) => {
     const context = await browser.newContext();
     const page = await context.newPage();
-    await page.goto(CLIENT_URL);
+    await page.goto(`${CLIENT_URL}/lobby/ZZZZZZ`);
     await page.getByPlaceholder("Enter your name").fill("Bob");
-    await page.getByPlaceholder("Enter game code").fill("ZZZZZZ");
     await page.getByRole("button", { name: "Join Game" }).click();
 
     await expect(page.getByText(/Game not found/i)).toBeVisible();
@@ -81,7 +80,7 @@ test.describe("Game Joining", () => {
     const page2 = await ctx2.newPage();
 
     const gameCode = await createGame(page1, "Alice");
-    await joinGameViaLobby(page2, "Bob", gameCode);
+    await joinGame(page2, "Bob", gameCode);
 
     await expect(page2.locator("p.text-3xl.font-mono")).toContainText(gameCode);
     await expect(page1.getByText("Bob")).toBeVisible();
@@ -290,5 +289,22 @@ test.describe("Docker Deployment", () => {
     expect(resp.ok()).toBe(true);
     const body = await resp.json();
     expect(body.status).toBe("ok");
+  });
+});
+
+test.describe("Lobby URL Sharing", () => {
+  test("TC-28: Lobby displays game URL with Copy button", async ({ browser }) => {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    const gameCode = await createGame(page, "Alice");
+
+    const gameUrl = `${CLIENT_URL}/lobby/${gameCode}`;
+    await expect(page.getByText(gameUrl)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Copy" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Copy" }).click();
+    await expect(page.getByRole("button", { name: "Copied!" })).toBeVisible();
+
+    await ctx.close();
   });
 });

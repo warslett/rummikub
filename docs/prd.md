@@ -80,9 +80,10 @@ The official Rummikub rules are maintained in [rules.md](rules.md) as the single
 
 | ID | Requirement |
 |----|-------------|
-| F-36 | Landing page with "Create Game" button |
+| F-36 | Landing page with "Create Game" button (no join form on home page) |
 | F-37 | Game creation flow: enter name -> receive game URL/code |
-| F-38 | Game joining flow: visit URL -> enter name -> wait for game to start |
+| F-38 | Game joining flow: visit game URL -> enter name -> wait for game to start |
+| F-39 | The lobby displays the shareable game URL with a "Copy" button to copy it to the clipboard |
 
 ## 4. Non-Functional Requirements
 
@@ -293,8 +294,8 @@ type TurnAction =
 
 ### 6.2 Key Screens
 
-1. **Home page**: Simple landing with "Create Game" button and "Join Game" input (enter code)
-2. **Lobby**: Waiting for opponent, showing game code and shareable URL
+1. **Home page**: Simple landing with "Create Game" button only
+2. **Lobby**: Waiting for opponent, showing game code, shareable URL, and "Copy" button
 3. **Game board**: Main gameplay screen with rack, board, pool, scores
 4. **Game over**: Results, scores, "Play Again" option
 

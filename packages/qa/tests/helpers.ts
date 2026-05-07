@@ -25,14 +25,6 @@ export async function createGame(page: import("@playwright/test").Page, playerNa
 }
 
 export async function joinGame(page: import("@playwright/test").Page, playerName: string, gameCode: string) {
-  await page.goto(CLIENT_URL);
-  await page.getByPlaceholder("Enter your name").fill(playerName);
-  await page.getByPlaceholder("Enter game code").fill(gameCode);
-  await page.getByRole("button", { name: "Join Game" }).click();
-  await page.waitForURL(/\/lobby\//);
-}
-
-export async function joinGameViaLobby(page: import("@playwright/test").Page, playerName: string, gameCode: string) {
   await page.goto(`${CLIENT_URL}/lobby/${gameCode}`);
   await page.getByPlaceholder("Enter your name").fill(playerName);
   await page.getByRole("button", { name: "Join Game" }).click();
