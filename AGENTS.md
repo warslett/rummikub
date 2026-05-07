@@ -43,4 +43,5 @@ Before responding to ANY prompt, you MUST follow these steps IN ORDER. DO NOT be
 | [planning.md](docs/planning.md) | MUST read before creating any plans. | Do NOT read when executing an existing plan, writing code, fixing bugs, or running tests. |
 | [unit_testing.md](docs/unit_testing.md) | MUST read before writing, running, or modifying unit or integration tests. | Not needed for e2e tests or non-test tasks. |
 | [e2e_testing.md](docs/e2e_testing.md) | MUST read before writing, running, or modifying e2e tests. | Not needed for unit tests or non-test tasks. |
+| [plan_execution.md](docs/plan_execution.md) | MUST read when executing an existing plan. | Do NOT read when creating a plan, fixing bugs, or answering questions. |
 | [bug_fixing.md](docs/bug_fixing.md) | MUST read before attempting to investigate or implement any bug fixes, unexpected behaviour, or when a user reports something that doesn't work as they expect. | — |
