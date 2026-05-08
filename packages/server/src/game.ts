@@ -7,6 +7,7 @@ import {
   resolveJokerValue,
   generateAllTiles,
   shuffleTiles,
+  sortSetTiles,
   JOKER_COLOR,
   JOKER_PENALTY,
   MAX_PLAYERS,
@@ -154,13 +155,18 @@ export class Game {
       throw new Error("Cannot manipulate board before making initial meld");
     }
 
-    if (!isValidBoard(newBoard)) {
+    const sortedBoard = newBoard.map(set => ({
+      ...set,
+      tiles: sortSetTiles(set.tiles),
+    }));
+
+    if (!isValidBoard(sortedBoard)) {
       throw new Error("Resulting board has invalid sets");
     }
 
     const oldBoardTileIds = new Set(this.state.board.flatMap((s) => s.tiles.map((t) => t.id)));
     const oldRackTileIds = new Set(player.rack.map((t) => t.id));
-    const newBoardTileIds = newBoard.flatMap((s) => s.tiles.map((t) => t.id));
+    const newBoardTileIds = sortedBoard.flatMap((s) => s.tiles.map((t) => t.id));
 
     for (const tileId of newBoardTileIds) {
       if (!oldBoardTileIds.has(tileId) && !oldRackTileIds.has(tileId)) {
@@ -174,7 +180,7 @@ export class Game {
     }
 
     const jokersOnOldBoard = this.state.board.flatMap((s) => s.tiles).filter(isJoker);
-    const jokersOnNewBoard = newBoard.flatMap((s) => s.tiles).filter(isJoker);
+    const jokersOnNewBoard = sortedBoard.flatMap((s) => s.tiles).filter(isJoker);
 
     const freedJokers = jokersOnOldBoard.filter((j) => !newBoardTileIdSet.has(j.id));
     if (freedJokers.length > 0) {
@@ -186,7 +192,7 @@ export class Game {
       }
     }
 
-    const jokerRetrieved = this.wasJokerRetrieved(this.state.board, newBoard);
+    const jokerRetrieved = this.wasJokerRetrieved(this.state.board, sortedBoard);
     if (jokerRetrieved) {
       const rackTilesOnNewBoard = newBoardTileIds.filter((id) => !oldBoardTileIds.has(id));
       if (rackTilesOnNewBoard.length === 0) {
@@ -211,7 +217,7 @@ export class Game {
     }
 
     player.rack = [...newRack, ...returnedBoardTiles];
-    this.state.board = newBoard;
+    this.state.board = sortedBoard;
     this.state.turnActions.push({ type: "manipulate" });
     this.state.lastActivityAt = Date.now();
   }

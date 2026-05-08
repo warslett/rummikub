@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isValidRun, isValidGroup, isValidSet, isValidBoard, calculateSetValue, resolveJokerValue, formSetsFromTiles } from "./validation";
+import { isValidRun, isValidGroup, isValidSet, isValidBoard, calculateSetValue, resolveJokerValue, formSetsFromTiles, sortSetTiles } from "./validation";
 import type { Tile, TileSet } from "./types";
 
 function tile(color: Tile["color"], value: number, id?: string): Tile {
@@ -363,5 +363,103 @@ describe("formSetsFromTiles", () => {
     const sets = formSetsFromTiles(tiles);
     expect(sets).toHaveLength(1);
     expect(isValidRun(sets[0].tiles)).toBe(true);
+  });
+});
+
+describe("sortSetTiles", () => {
+  it("should sort a simple unsorted run", () => {
+    const tiles = [tile("red", 5), tile("red", 3), tile("red", 4)];
+    const result = sortSetTiles(tiles);
+    expect(result.map((t) => t.value)).toEqual([3, 4, 5]);
+  });
+
+  it("should return sorted run when already sorted", () => {
+    const tiles = [tile("red", 3), tile("red", 4), tile("red", 5)];
+    const result = sortSetTiles(tiles);
+    expect(result.map((t) => t.value)).toEqual([3, 4, 5]);
+  });
+
+  it("should return as-is for a group", () => {
+    const tiles = [tile("red", 7), tile("blue", 7), tile("black", 7)];
+    const result = sortSetTiles(tiles);
+    expect(result.map((t) => t.id)).toEqual(tiles.map((t) => t.id));
+  });
+
+  it("should return as-is for mixed-color set", () => {
+    const tiles = [tile("red", 3), tile("blue", 4), tile("red", 5)];
+    const result = sortSetTiles(tiles);
+    expect(result.map((t) => t.id)).toEqual(tiles.map((t) => t.id));
+  });
+
+  it("should sort a run with joker in wrong position", () => {
+    const tiles = [tile("red", 5), joker("joker-1"), tile("red", 3)];
+    const result = sortSetTiles(tiles);
+    expect(result.map((t) => t.id)).toEqual(["red-3-a", "joker-1", "red-5-a"]);
+  });
+
+  it("should sort joker at start of run when end is not valid", () => {
+    const tiles = [tile("red", 12), joker("joker-1"), tile("red", 13)];
+    const result = sortSetTiles(tiles);
+    expect(result.map((t) => t.id)).toEqual(["joker-1", "red-12-a", "red-13-a"]);
+  });
+
+  it("should keep joker at end when already correct", () => {
+    const tiles = [tile("red", 3), tile("red", 4), joker("joker-1")];
+    const result = sortSetTiles(tiles);
+    expect(result.map((t) => t.id)).toEqual(["red-3-a", "red-4-a", "joker-1"]);
+  });
+
+  it("should handle two jokers in a run", () => {
+    const tiles = [tile("red", 3), tile("red", 6), joker("j1"), joker("j2")];
+    const result = sortSetTiles(tiles);
+    expect(isValidRun(result)).toBe(true);
+    expect(result.map((t) => t.id)).toEqual(["red-3-a", "j1", "j2", "red-6-a"]);
+  });
+
+  it("should return as-is for tiles that cannot form a valid run", () => {
+    const tiles = [tile("red", 3), tile("red", 7), tile("red", 10)];
+    const result = sortSetTiles(tiles);
+    expect(result.map((t) => t.id)).toEqual(tiles.map((t) => t.id));
+  });
+
+  it("should return as-is for single tile", () => {
+    const tiles = [tile("red", 3)];
+    const result = sortSetTiles(tiles);
+    expect(result).toEqual(tiles);
+  });
+
+  it("should return as-is for empty array", () => {
+    const result = sortSetTiles([]);
+    expect(result).toEqual([]);
+  });
+
+  it("should return as-is for two tiles that are consecutive", () => {
+    const tiles = [tile("red", 4), tile("red", 3)];
+    const result = sortSetTiles(tiles);
+    expect(result.map((t) => t.value)).toEqual([3, 4]);
+  });
+
+  it("should return as-is for two tiles that are not consecutive", () => {
+    const tiles = [tile("red", 3), tile("red", 7)];
+    const result = sortSetTiles(tiles);
+    expect(result.map((t) => t.id)).toEqual(tiles.map((t) => t.id));
+  });
+
+  it("should return as-is for all jokers", () => {
+    const tiles = [joker("j1"), joker("j2")];
+    const result = sortSetTiles(tiles);
+    expect(result.map((t) => t.id)).toEqual(tiles.map((t) => t.id));
+  });
+
+  it("should return as-is when gap between tiles exceeds available jokers", () => {
+    const tiles = [tile("red", 3), tile("red", 7), joker("j1")];
+    const result = sortSetTiles(tiles);
+    expect(result.map((t) => t.id)).toEqual(tiles.map((t) => t.id));
+  });
+
+  it("should sort a long unsorted run", () => {
+    const tiles = [tile("red", 7), tile("red", 3), tile("red", 5), tile("red", 4), tile("red", 6)];
+    const result = sortSetTiles(tiles);
+    expect(result.map((t) => t.value)).toEqual([3, 4, 5, 6, 7]);
   });
 });

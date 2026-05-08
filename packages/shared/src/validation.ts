@@ -128,6 +128,64 @@ export function formSetsFromTiles(tiles: Tile[]): TileSet[] {
     : [];
 }
 
+export function sortSetTiles(tiles: Tile[]): Tile[] {
+  if (tiles.length <= 1) return tiles;
+
+  const jokers = tiles.filter(isJoker);
+  const nonJokers = tiles.filter((t) => !isJoker(t));
+
+  if (nonJokers.length === 0) return tiles;
+
+  const runColor = nonJokers[0].color;
+  for (const t of nonJokers) {
+    if (t.color !== runColor) return tiles;
+  }
+
+  const sorted = [...nonJokers].sort((a, b) => (a.value as number) - (b.value as number));
+
+  if (jokers.length === 0) {
+    for (let i = 1; i < sorted.length; i++) {
+      if ((sorted[i].value as number) !== (sorted[i - 1].value as number) + 1) return tiles;
+    }
+    return sorted;
+  }
+
+  const result = placeJokersForSort(sorted, jokers);
+  return result ?? tiles;
+}
+
+function placeJokersForSort(sorted: Tile[], jokers: Tile[]): Tile[] | null {
+  if (sorted.length + jokers.length < MIN_SET_SIZE) return null;
+
+  const remainingJokers = [...jokers];
+  const withGaps: Tile[] = [];
+
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0) {
+      const gap = (sorted[i].value as number) - (sorted[i - 1].value as number) - 1;
+      if (gap > remainingJokers.length) {
+        return tryFormRunWithJokers(sorted, jokers);
+      }
+      for (let g = 0; g < gap; g++) {
+        withGaps.push(remainingJokers.shift()!);
+      }
+    }
+    withGaps.push(sorted[i]);
+  }
+
+  if (remainingJokers.length > 0) {
+    const withEnd = [...withGaps, ...remainingJokers];
+    if (isValidRun(withEnd)) return withEnd;
+
+    const withStart = [...remainingJokers, ...withGaps];
+    if (isValidRun(withStart)) return withStart;
+  } else if (isValidRun(withGaps)) {
+    return withGaps;
+  }
+
+  return tryFormRunWithJokers(sorted, jokers);
+}
+
 function tryFormRunWithJokers(sorted: Tile[], jokers: Tile[]): Tile[] | null {
   if (sorted.length + jokers.length < MIN_SET_SIZE) return null;
 

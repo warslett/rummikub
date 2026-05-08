@@ -1,4 +1,4 @@
-export { isValidRun, isValidGroup, isValidSet, isValidBoard, calculateSetValue, resolveJokerValue, formSetsFromTiles } from "./validation.js";
+export { isValidRun, isValidGroup, isValidSet, isValidBoard, calculateSetValue, resolveJokerValue, formSetsFromTiles, sortSetTiles } from "./validation.js";
 export { generateAllTiles, shuffleTiles } from "./tiles.js";
 export {
   COLORS,

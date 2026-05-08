@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-A virtual, online Rummikub game that allows two players to play against each other over the internet in turns. No login required - players create a game, receive a shareable URL with a game code, and an opponent joins by visiting that URL. Each player enters their name before the game begins.
+A virtual, online Rummikub game that allows 2–4 players to play against each other over the internet in turns. No login required - players create a game, receive a shareable URL, and opponents join by visiting that URL. Each player enters their name before the game begins.
 
 ## 2. Rummikub Rules (Sabra Variant)
 
@@ -16,11 +16,11 @@ The official Rummikub rules are maintained in [rules.md](rules.md) as the single
 |----|-------------|
 | F-01 | A player can create a new game without logging in or registering |
 | F-02 | Creating a game generates a random, unique game code (e.g., 6-character alphanumeric) |
-| F-03 | The creator receives a game URL in the format `{base_url}/game/{game_code}` |
-| F-04 | Another player can join by visiting the game URL |
-| F-05 | Both players must enter their display name before the game begins |
-| F-06 | The game starts only when both players have entered their names and confirmed readiness |
-| F-07 | If a player visits a game URL that is already full (2 players), they are offered spectator mode instead |
+| F-03 | The creator receives a game URL in the format `{base_url}/lobby/{game_code}` |
+| F-04 | Other players can join by visiting the game URL (up to 4 players total) |
+| F-05 | All players must enter their display name before the game begins |
+| F-06 | The game can be started by any player once at least 2 players have joined |
+| F-07 | If a player visits a game URL that is already full (4 players), they are offered spectator mode instead |
 | F-08 | If a player visits an invalid/expired game code, they see a clear error message |
 
 ### 3.2 Gameplay
@@ -30,7 +30,9 @@ The official Rummikub rules are maintained in [rules.md](rules.md) as the single
 | F-09 | Each player can see their own tiles (on their rack) and all tiles on the board |
 | F-10 | Players cannot see their opponent's tiles |
 | F-11 | Players take turns. The active player is clearly indicated |
+| F-11.1 | Turn rotation works correctly for 2–4 players (circular: 0 → 1 → 2 → 3 → 0) |
 | F-12 | On their turn, a player can: draw from the pool, play new sets, add to existing sets, manipulate existing sets, or any combination |
+| F-12.1 | When a tile is placed into a set that forms a valid run, the tiles are automatically sorted in ascending value order with jokers in their correct positions; groups are not reordered |
 | F-13 | The initial meld requirement (30+ points) is enforced |
 | F-14 | The server validates all moves before applying them. Invalid moves are rejected with a clear error message |
 | F-15 | A player can end their turn only when all board tiles form valid sets |
@@ -38,14 +40,14 @@ The official Rummikub rules are maintained in [rules.md](rules.md) as the single
 | F-17 | The pool tile count is visible to both players |
 | F-18 | When a player places their last tile, the game ends and they are declared the winner |
 | F-19 | If the pool is empty and no player can make a valid move, the game ends and the player with fewest tiles wins |
-| F-19.1 | Stalemate: when the pool is empty, a player may pass their turn; two consecutive passes end the game and the player with the lowest rack value wins (jokers count as 30 points) |
+| F-19.1 | Stalemate: when the pool is empty, a player may pass their turn; all N players passing consecutively ends the game and the player with the lowest rack value wins (jokers count as 30 points) |
 | F-20 | The turn alternates between players automatically |
 
 ### 3.3 Scoring & Results
 
 | ID | Requirement |
 |----|-------------|
-| F-21 | At game end, scores are calculated per the Sabra scoring rules |
+| F-21 | At game end, scores are calculated per the Sabra scoring rules (winner gets sum of all losers' rack values; each loser gets negative of their own rack value) |
 | F-22 | Cumulative scores are tracked across multiple rounds between the same players |
 | F-23 | After a game ends, players can choose to play another round (scores persist) or leave |
 | F-24 | Score history is visible during and after the game |
@@ -80,13 +82,18 @@ The official Rummikub rules are maintained in [rules.md](rules.md) as the single
 
 | ID | Requirement |
 |----|-------------|
-| F-36 | Landing page with "Create Game" button (no join form on home page) |
+| F-36 | Landing page with "Create Game" button only (no join form on home page; joining is done via the game URL) |
 | F-37 | Game creation flow: enter name -> receive game URL/code |
 | F-38 | Game joining flow: visit game URL -> enter name -> wait for game to start |
-| F-39 | The lobby displays the shareable game URL with a "Copy" button to copy it to the clipboard |
+| F-39 | The lobby displays the shareable game URL with a "Copy" button to copy it to the clipboard (clipboard feedback shown on click) |
+
+### 3.8 Auto-Sort
+
+| ID | Requirement |
+|----|-------------|
+| F-40 | Auto-sort run tiles: when a tile is added to a set that forms a valid run, tiles are automatically sorted in ascending value order with jokers placed correctly; groups are left as-is; sorting applies on both client (immediate visual feedback) and server (authoritative validation) |
 
 ## 4. Non-Functional Requirements
-
 | ID | Requirement |
 |----|-------------|
 | NF-01 | **Responsive**: UI must work on desktop and mobile devices (responsive design) |
@@ -113,17 +120,19 @@ The official Rummikub rules are maintained in [rules.md](rules.md) as the single
 ### 5.2 Architecture: Server-Authoritative
 
 ```
-┌─────────────┐         Socket.IO         ┌─────────────────┐
+┌─────────────┐         Socket.IO          ┌─────────────────┐
 │   Client A  │◄──────────────────────────►│                 │
 │  (React)    │                            │   Game Server   │
 │             │                            │   (Node.js)     │
 ├─────────────┤                            │                 │
 │   Client B  │◄──────────────────────────►│  - Validates    │
 │  (React)    │                            │    all moves    │
-│             │                            │  - Manages      │
-├─────────────┤                            │    game state   │
-│  Spectator  │◄─── read-only broadcast ──│  - Broadcasts   │
-│  (React)    │                            │    state changes│
+├─────────────┤                            │  - Manages      │
+│  Client C/D │◄──────────────────────────►│    game state   │
+│  (React)    │                            │  - Broadcasts   │
+├─────────────┤                            │    state changes│
+│  Spectator  │◄─── read-only broadcast ───│                 │
+│  (React)    │                            │                 │
 └─────────────┘                            └─────────────────┘
 ```
 
@@ -278,7 +287,11 @@ type TurnAction =
 
 7. **Board manipulation**: Players submit the entire resulting board state; the server validates all sets are valid and that no tiles appeared from nowhere. Joker retrieval requires playing at least one rack tile.
 
-8. **Stalemate via consecutive passes**: When the pool is empty, a player may pass their turn. Two consecutive passes end the game; the player with the lowest rack value wins. Jokers in the rack count as 30 points each for this calculation.
+8. **Stalemate via consecutive passes**: When the pool is empty, a player may pass their turn. All N players passing consecutively ends the game; the player with the lowest rack value wins. Jokers in the rack count as 30 points each for this calculation.
+
+9. **Auto-sort on placement**: When a tile is added to a set, runs are automatically sorted in ascending value order with jokers in correct positions. This eliminates the need to click the precise insertion point. Sorting happens on both the client (immediate visual feedback) and the server (authoritative validation before checking board validity). Groups are never reordered.
+
+10. **Multi-player (2–4)**: No pre-selection of player count. Up to 4 players can join via the game URL. Any player can start the game once 2+ have joined. A 5th visitor is offered spectator mode. Turn rotation, scoring, and stalemate all support 2–4 players.
 
 ## 6. UI/UX Design Notes
 
@@ -313,7 +326,6 @@ type TurnAction =
 These features are explicitly deferred but should be considered in architecture decisions:
 
 - In-game chat
-- 3-4 player support
 - AI opponent / practice mode
 - User accounts and game history
 - Persistent storage (database)
@@ -359,7 +371,8 @@ These features are explicitly deferred but should be considered in architecture 
 ### Phase 3: Extended Features
 
 - [x] Spectator mode
-- [ ] 3-4 player support
+- [x] 3-4 player support
+- [x] Auto-sort run tiles after placement
 - [ ] Valid move highlighting
 - [ ] Visual polish (traditional board game feel)
 

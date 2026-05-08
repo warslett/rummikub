@@ -248,4 +248,214 @@ test.describe("Board Manipulation", () => {
     await ctx1.close();
     await ctx2.close();
   });
+
+  test("TC-59: Adding a tile to the end of a run auto-sorts correctly", async ({ browser }) => {
+    const { page1, page2, ctx1, ctx2, gameCode, player1Id, player2Id } = await createAndStartGame(browser);
+
+    await seedAndWait(gameCode, {
+      board: [{ id: "s1", tiles: [tile("red", 3, "red-3-a"), tile("red", 4, "red-4-a"), tile("red", 5, "red-5-a")] }],
+      racks: {
+        [player1Id]: [tile("red", 6, "red-6-a"), tile("blue", 3, "blue-3-a")],
+        [player2Id]: [tile("orange", 1, "orange-1-a")],
+      },
+      pool: [tile("black", 1, "black-1-a")],
+      currentTurnPlayerId: player1Id,
+      hasInitialMeld: { [player1Id]: true, [player2Id]: true },
+    }, [page1, page2]);
+
+    const activePlayer = await getActivePlayer(page1, page2);
+
+    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const red6Tile = rack.locator("button").filter({ hasText: "6" }).first();
+    await red6Tile.click();
+
+    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const board5 = boardArea.locator("button").filter({ hasText: "5" }).first();
+    await board5.click();
+
+    await activePlayer.getByRole("button", { name: "End Turn" }).click();
+
+    const otherPlayer = activePlayer === page1 ? page2 : page1;
+    await expect(otherPlayer.getByText("Your turn")).toBeVisible({ timeout: 5000 });
+
+    await ctx1.close();
+    await ctx2.close();
+  });
+
+  test("TC-60: Adding a tile to the beginning of a run auto-sorts correctly", async ({ browser }) => {
+    const { page1, page2, ctx1, ctx2, gameCode, player1Id, player2Id } = await createAndStartGame(browser);
+
+    await seedAndWait(gameCode, {
+      board: [{ id: "s1", tiles: [tile("red", 4, "red-4-a"), tile("red", 5, "red-5-a"), tile("red", 6, "red-6-a")] }],
+      racks: {
+        [player1Id]: [tile("red", 3, "red-3-a"), tile("blue", 3, "blue-3-a")],
+        [player2Id]: [tile("orange", 1, "orange-1-a")],
+      },
+      pool: [tile("black", 1, "black-1-a")],
+      currentTurnPlayerId: player1Id,
+      hasInitialMeld: { [player1Id]: true, [player2Id]: true },
+    }, [page1, page2]);
+
+    const activePlayer = await getActivePlayer(page1, page2);
+
+    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const red3Tile = rack.locator("button").filter({ hasText: "3" }).first();
+    await red3Tile.click();
+
+    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const board4 = boardArea.locator("button").filter({ hasText: "4" }).first();
+    await board4.click();
+
+    await activePlayer.getByRole("button", { name: "End Turn" }).click();
+
+    const otherPlayer = activePlayer === page1 ? page2 : page1;
+    await expect(otherPlayer.getByText("Your turn")).toBeVisible({ timeout: 5000 });
+
+    await ctx1.close();
+    await ctx2.close();
+  });
+
+  test("TC-61: Adding a tile to the middle of a run auto-sorts correctly", async ({ browser }) => {
+    const { page1, page2, ctx1, ctx2, gameCode, player1Id, player2Id } = await createAndStartGame(browser);
+
+    await seedAndWait(gameCode, {
+      board: [{ id: "s1", tiles: [tile("red", 3, "red-3-a"), tile("red", 4, "red-4-a"), tile("red", 6, "red-6-a")] }],
+      racks: {
+        [player1Id]: [tile("red", 5, "red-5-a"), tile("blue", 3, "blue-3-a")],
+        [player2Id]: [tile("orange", 1, "orange-1-a")],
+      },
+      pool: [tile("black", 1, "black-1-a")],
+      currentTurnPlayerId: player1Id,
+      hasInitialMeld: { [player1Id]: true, [player2Id]: true },
+    }, [page1, page2]);
+
+    const activePlayer = await getActivePlayer(page1, page2);
+
+    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const red5Tile = rack.locator("button").filter({ hasText: "5" }).first();
+    await red5Tile.click();
+
+    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const board4 = boardArea.locator("button").filter({ hasText: "4" }).first();
+    await board4.click();
+
+    await activePlayer.getByRole("button", { name: "End Turn" }).click();
+
+    const otherPlayer = activePlayer === page1 ? page2 : page1;
+    await expect(otherPlayer.getByText("Your turn")).toBeVisible({ timeout: 5000 });
+
+    await ctx1.close();
+    await ctx2.close();
+  });
+
+  test("TC-62: Adding a tile to a group does not reorder", async ({ browser }) => {
+    const { page1, page2, ctx1, ctx2, gameCode, player1Id, player2Id } = await createAndStartGame(browser);
+
+    await seedAndWait(gameCode, {
+      board: [{ id: "s1", tiles: [tile("red", 7, "red-7-a"), tile("blue", 7, "blue-7-a"), tile("black", 7, "black-7-a")] }],
+      racks: {
+        [player1Id]: [tile("orange", 7, "orange-7-a"), tile("red", 3, "red-3-a")],
+        [player2Id]: [tile("blue", 1, "blue-1-a")],
+      },
+      pool: [tile("black", 1, "black-1-a")],
+      currentTurnPlayerId: player1Id,
+      hasInitialMeld: { [player1Id]: true, [player2Id]: true },
+    }, [page1, page2]);
+
+    const activePlayer = await getActivePlayer(page1, page2);
+
+    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const orange7Tile = rack.locator("button").filter({ hasText: "7" }).first();
+    await orange7Tile.click();
+
+    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const board7 = boardArea.locator("button").filter({ hasText: "7" }).first();
+    await board7.click();
+
+    const sevenButtons = boardArea.locator("button").filter({ hasText: /^7$/ });
+    expect(await sevenButtons.count()).toBe(4);
+
+    await activePlayer.getByRole("button", { name: "End Turn" }).click();
+
+    const otherPlayer = activePlayer === page1 ? page2 : page1;
+    await expect(otherPlayer.getByText("Your turn")).toBeVisible({ timeout: 5000 });
+
+    await ctx1.close();
+    await ctx2.close();
+  });
+
+  test("TC-63: Adding a tile to a run with a joker auto-sorts joker into correct position", async ({ browser }) => {
+    const { page1, page2, ctx1, ctx2, gameCode, player1Id, player2Id } = await createAndStartGame(browser);
+
+    await seedAndWait(gameCode, {
+      board: [{ id: "s1", tiles: [tile("red", 3, "red-3-a"), tile("joker", 0, "joker-1"), tile("red", 5, "red-5-a")] }],
+      racks: {
+        [player1Id]: [tile("red", 6, "red-6-a"), tile("blue", 3, "blue-3-a")],
+        [player2Id]: [tile("orange", 1, "orange-1-a")],
+      },
+      pool: [tile("black", 1, "black-1-a")],
+      currentTurnPlayerId: player1Id,
+      hasInitialMeld: { [player1Id]: true, [player2Id]: true },
+    }, [page1, page2]);
+
+    const activePlayer = await getActivePlayer(page1, page2);
+
+    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const red6Tile = rack.locator("button").filter({ hasText: "6" }).first();
+    await red6Tile.click();
+
+    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const board5 = boardArea.locator("button").filter({ hasText: "5" }).first();
+    await board5.click();
+
+    await activePlayer.getByRole("button", { name: "End Turn" }).click();
+
+    const otherPlayer = activePlayer === page1 ? page2 : page1;
+    await expect(otherPlayer.getByText("Your turn")).toBeVisible({ timeout: 5000 });
+
+    await ctx1.close();
+    await ctx2.close();
+  });
+
+  test("TC-64: Moving a tile between runs auto-sorts the destination run", async ({ browser }) => {
+    const { page1, page2, ctx1, ctx2, gameCode, player1Id, player2Id } = await createAndStartGame(browser);
+
+    await seedAndWait(gameCode, {
+      board: [
+        { id: "s1", tiles: [tile("red", 3, "red-3-a"), tile("red", 4, "red-4-a"), tile("red", 5, "red-5-a")] },
+        { id: "s2", tiles: [tile("red", 6, "red-6-a"), tile("red", 7, "red-7-a"), tile("red", 8, "red-8-a")] },
+      ],
+      racks: {
+        [player1Id]: [tile("red", 9, "red-9-a"), tile("blue", 3, "blue-3-a")],
+        [player2Id]: [tile("orange", 1, "orange-1-a")],
+      },
+      pool: [tile("black", 1, "black-1-a")],
+      currentTurnPlayerId: player1Id,
+      hasInitialMeld: { [player1Id]: true, [player2Id]: true },
+    }, [page1, page2]);
+
+    const activePlayer = await getActivePlayer(page1, page2);
+
+    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const red9Tile = rack.locator("button").filter({ hasText: "9" }).first();
+    await red9Tile.click();
+
+    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const board8 = boardArea.locator("button").filter({ hasText: "8" }).first();
+    await board8.click();
+
+    const board6 = boardArea.locator("button").filter({ hasText: "6" }).first();
+    await board6.click();
+
+    const board5 = boardArea.locator("button").filter({ hasText: "5" }).first();
+    await board5.click();
+
+    await activePlayer.getByRole("button", { name: "End Turn" }).click();
+
+    const otherPlayer = activePlayer === page1 ? page2 : page1;
+    await expect(otherPlayer.getByText("Your turn")).toBeVisible({ timeout: 5000 });
+
+    await ctx1.close();
+    await ctx2.close();
+  });
 });

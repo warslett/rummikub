@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useGame } from "../contexts/GameContext";
 import { socket } from "../socket";
 import { Board, Rack, Pool, OpponentInfo, Controls } from "../components/GameBoard";
-import { isValidBoard, formSetsFromTiles, JOKER_COLOR } from "@rummikub/shared";
+import { isValidBoard, formSetsFromTiles, sortSetTiles, JOKER_COLOR } from "@rummikub/shared";
 import type { Tile, TileSet } from "@rummikub/shared";
 function isJoker(tile: Tile): boolean {
   return tile.color === JOKER_COLOR;
@@ -210,11 +210,18 @@ export function GameBoard() {
     if (isInRack) {
       setWorkingRack(wr.filter((t) => t.id !== tile.id));
     } else {
-      for (const set of wb) { set.tiles = set.tiles.filter((t) => t.id !== tile.id); }
+      for (const set of wb) {
+        const before = set.tiles.length;
+        set.tiles = set.tiles.filter((t) => t.id !== tile.id);
+        if (set.tiles.length !== before && set.tiles.length > 0) {
+          set.tiles = sortSetTiles(set.tiles);
+        }
+      }
       wb.forEach((set, i) => { if (set.tiles.length === 0) wb.splice(i, 1); });
     }
 
     wb[targetSetIndex].tiles.splice(targetTileIndex + 1, 0, tile);
+    wb[targetSetIndex].tiles = sortSetTiles(wb[targetSetIndex].tiles);
     setWorkingBoard([...wb]);
     setSelectedTileId(null);
   }
@@ -231,7 +238,7 @@ export function GameBoard() {
       for (const set of wb) { set.tiles = set.tiles.filter((t) => t.id !== tile.id); }
     }
 
-    wb.push({ id: generateSetId(), tiles: [tile] });
+    wb.push({ id: generateSetId(), tiles: sortSetTiles([tile]) });
     setWorkingBoard([...wb]);
     setSelectedTileId(null);
   }
