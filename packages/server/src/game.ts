@@ -249,6 +249,16 @@ export class Game {
       throw new Error("Must play or draw before ending turn");
     }
 
+    const hasPlaceSet = this.state.turnActions.some((a) => a.type === "placeSet");
+    const hasDraw = this.state.turnActions.some((a) => a.type === "draw");
+
+    if (!hasPlaceSet && !hasDraw) {
+      const snapshot = this.state.turnSnapshot;
+      if (snapshot && this.boardsAreEqual(this.state.board, snapshot.board)) {
+        throw new Error("Must make a valid play or draw a tile");
+      }
+    }
+
     const player = this.getPlayer(playerId);
 
     if (this.state.turnActions.some((a) => a.type === "placeSet" || a.type === "manipulate")) {
@@ -539,6 +549,16 @@ export class Game {
     }
 
     return false;
+  }
+
+  private boardsAreEqual(a: TileSet[], b: TileSet[]): boolean {
+    const aIds = a.flatMap((s) => s.tiles.map((t) => t.id)).sort();
+    const bIds = b.flatMap((s) => s.tiles.map((t) => t.id)).sort();
+    if (aIds.length !== bIds.length) return false;
+    for (let i = 0; i < aIds.length; i++) {
+      if (aIds[i] !== bIds[i]) return false;
+    }
+    return true;
   }
 
   private ensureTurnSnapshot(): void {

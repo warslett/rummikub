@@ -308,6 +308,42 @@ describe("Game", () => {
       expect(() => game.endTurn("p2")).toThrow();
     });
 
+    it("should reject endTurn when board was manipulated but ended up unchanged", () => {
+      game.getState().players[0].rack = [
+        makeTile("red", 10, "r10a"),
+        makeTile("red", 11, "r11a"),
+        makeTile("red", 12, "r12a"),
+      ];
+      game.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }]);
+      game.endTurn("p1");
+
+      game.drawTile("p2");
+
+      game.manipulateBoard("p1", [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }]);
+      expect(() => game.endTurn("p1")).toThrow(/draw/i);
+    });
+
+    it("should reject endTurn when manipulations cancel out and board matches snapshot", () => {
+      game.getState().players[0].rack = [
+        makeTile("red", 10, "r10a"),
+        makeTile("red", 11, "r11a"),
+        makeTile("red", 12, "r12a"),
+        makeTile("red", 9, "r9a"),
+      ];
+      game.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }]);
+      game.endTurn("p1");
+
+      game.drawTile("p2");
+
+      game.manipulateBoard("p1", [
+        { id: "s1", tiles: [makeTile("red", 9, "r9a"), makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] },
+      ]);
+      game.manipulateBoard("p1", [
+        { id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] },
+      ]);
+      expect(() => game.endTurn("p1")).toThrow(/draw/i);
+    });
+
     it("should mark initial meld as complete after player plays a valid initial set", () => {
       game.getState().players[0].rack = [
         makeTile("red", 10, "r10a"),
