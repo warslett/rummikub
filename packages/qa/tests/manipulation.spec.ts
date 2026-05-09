@@ -52,11 +52,11 @@ test.describe("Board Manipulation", () => {
     const rackBefore = await getRackTileCount(activePlayer);
     expect(rackBefore).toBe(3);
 
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
     const red13Tile = rack.locator("button").filter({ hasText: "13" }).first();
     await red13Tile.click();
 
-    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
     const board12 = boardArea.locator("button").filter({ hasText: "12" }).first();
     await board12.click();
 
@@ -87,7 +87,7 @@ test.describe("Board Manipulation", () => {
     }, [page1, page2]);
 
     const activePlayer = await getActivePlayer(page1, page2);
-    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
 
     await expect(boardArea.locator("button").filter({ hasText: "3" }).first()).toBeVisible({ timeout: 5000 });
     await expect(boardArea.locator("button").filter({ hasText: "4" }).first()).toBeVisible();
@@ -118,12 +118,12 @@ test.describe("Board Manipulation", () => {
     }, [page1, page2]);
 
     const activePlayer = await getActivePlayer(page1, page2);
-    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
 
     await expect(boardArea.locator("button").filter({ hasText: "3" }).first()).toBeVisible({ timeout: 5000 });
     await expect(boardArea.locator("button").filter({ hasText: "9" }).first()).toBeVisible();
 
-    const sets = boardArea.locator(".flex.gap-1.p-2");
+    const sets = boardArea.locator(".relative.p-3.rounded-lg");
     await expect(sets).toHaveCount(2, { timeout: 5000 });
 
     await ctx1.close();
@@ -145,7 +145,7 @@ test.describe("Board Manipulation", () => {
     }, [page1, page2]);
 
     const activePlayer = await getActivePlayer(page1, page2);
-    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
 
     const sevenButtons = boardArea.locator("button").filter({ hasText: /^7$/ });
     await expect(sevenButtons.first()).toBeVisible({ timeout: 5000 });
@@ -171,11 +171,11 @@ test.describe("Board Manipulation", () => {
 
     const activePlayer = await getActivePlayer(page1, page2);
 
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
     const blue3 = rack.locator("button").filter({ hasText: "3" }).first();
     await blue3.click();
 
-    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
     const board12 = boardArea.locator("button").filter({ hasText: "12" }).first();
     await board12.click();
 
@@ -204,7 +204,7 @@ test.describe("Board Manipulation", () => {
     const activePlayer = await getActivePlayer(page1, page2);
     await expect(activePlayer.getByText(/Initial meld/)).toBeVisible({ timeout: 5000 });
 
-    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
     const boardTiles = boardArea.locator("button");
     expect(await boardTiles.count()).toBeGreaterThan(0);
 
@@ -229,11 +229,11 @@ test.describe("Board Manipulation", () => {
     const activePlayer = await getActivePlayer(page1, page2);
     const rackBefore = await getRackTileCount(activePlayer);
 
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
     const tile13 = rack.locator("button").filter({ hasText: "13" }).first();
     await tile13.click();
 
-    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
     const board12 = boardArea.locator("button").filter({ hasText: "12" }).first();
     await board12.click();
 
@@ -265,11 +265,11 @@ test.describe("Board Manipulation", () => {
 
     const activePlayer = await getActivePlayer(page1, page2);
 
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
     const red6Tile = rack.locator("button").filter({ hasText: "6" }).first();
     await red6Tile.click();
 
-    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
     const board5 = boardArea.locator("button").filter({ hasText: "5" }).first();
     await board5.click();
 
@@ -298,11 +298,11 @@ test.describe("Board Manipulation", () => {
 
     const activePlayer = await getActivePlayer(page1, page2);
 
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
     const red3Tile = rack.locator("button").filter({ hasText: "3" }).first();
     await red3Tile.click();
 
-    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
     const board4 = boardArea.locator("button").filter({ hasText: "4" }).first();
     await board4.click();
 
@@ -331,11 +331,11 @@ test.describe("Board Manipulation", () => {
 
     const activePlayer = await getActivePlayer(page1, page2);
 
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
     const red5Tile = rack.locator("button").filter({ hasText: "5" }).first();
     await red5Tile.click();
 
-    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
     const board4 = boardArea.locator("button").filter({ hasText: "4" }).first();
     await board4.click();
 
@@ -364,11 +364,11 @@ test.describe("Board Manipulation", () => {
 
     const activePlayer = await getActivePlayer(page1, page2);
 
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
     const orange7Tile = rack.locator("button").filter({ hasText: "7" }).first();
     await orange7Tile.click();
 
-    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
     const board7 = boardArea.locator("button").filter({ hasText: "7" }).first();
     await board7.click();
 
@@ -400,11 +400,11 @@ test.describe("Board Manipulation", () => {
 
     const activePlayer = await getActivePlayer(page1, page2);
 
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
     const red6Tile = rack.locator("button").filter({ hasText: "6" }).first();
     await red6Tile.click();
 
-    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
     const board5 = boardArea.locator("button").filter({ hasText: "5" }).first();
     await board5.click();
 
@@ -436,11 +436,11 @@ test.describe("Board Manipulation", () => {
 
     const activePlayer = await getActivePlayer(page1, page2);
 
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
     const red9Tile = rack.locator("button").filter({ hasText: "9" }).first();
     await red9Tile.click();
 
-    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
     const board8 = boardArea.locator("button").filter({ hasText: "8" }).first();
     await board8.click();
 
@@ -476,11 +476,11 @@ test.describe("Board Manipulation", () => {
     const activePlayer = await getActivePlayer(page1, page2);
 
     // Click a board tile to select it, then click the rack to move it back
-    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
     const board5 = boardArea.locator("button").filter({ hasText: "5" }).first();
     await board5.click();
 
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
     const rackTile = rack.locator("button").first();
     await rackTile.click();
     await activePlayer.waitForTimeout(300);
@@ -524,11 +524,11 @@ test.describe("Board Manipulation", () => {
     await expect(activePlayer.getByText("Run has a gap: expected 5 between 4 and 6")).toBeVisible({ timeout: 5000 });
 
     // Add red-5 from rack to fill the gap
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
     const red5Tile = rack.locator("button").filter({ hasText: "5" }).first();
     await red5Tile.click();
 
-    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
     const board4 = boardArea.locator("button").filter({ hasText: "4" }).first();
     await board4.click();
     await activePlayer.waitForTimeout(300);

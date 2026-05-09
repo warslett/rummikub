@@ -27,6 +27,10 @@ test.describe("Multi-Player Support", () => {
     await page2.waitForURL(/\/game\//);
     await page3.waitForURL(/\/game\//);
 
+    await expect(page1.getByText(/Pool:/)).toBeVisible();
+    await expect(page2.getByText(/Pool:/)).toBeVisible();
+    await expect(page3.getByText(/Pool:/)).toBeVisible();
+
     const rack1Count = await getRackTileCount(page1);
     expect(rack1Count).toBe(14);
 
@@ -57,6 +61,8 @@ test.describe("Multi-Player Support", () => {
     await page2.waitForURL(/\/game\//);
     await page3.waitForURL(/\/game\//);
     await page4.waitForURL(/\/game\//);
+
+    await expect(page1.getByText(/Pool:/)).toBeVisible();
 
     const pool = await getPoolCount(page1);
     expect(parseInt(pool)).toBe(106 - 14 * 4);
@@ -185,11 +191,11 @@ test.describe("Multi-Player Support", () => {
 
     await expect(page1.getByText("Your turn")).toBeVisible({ timeout: 5000 });
 
-    const rack = page1.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = page1.locator(".gap-2.p-4.rounded-lg");
     const red13 = rack.locator("button").filter({ hasText: "13" }).first();
     await red13.click();
 
-    const boardArea = page1.locator(".bg-green-900\\/40");
+    const boardArea = page1.locator(".gap-3.p-5.rounded-xl");
     const board12 = boardArea.locator("button").filter({ hasText: "12" }).first();
     await board12.click();
 

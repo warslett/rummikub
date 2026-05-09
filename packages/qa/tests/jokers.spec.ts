@@ -53,8 +53,8 @@ test.describe("Jokers", () => {
     }, [page1, page2]);
 
     const activePlayer = await getActivePlayer(page1, page2);
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
-    await expect(rack.locator("button").filter({ hasText: "★" }).first()).toBeVisible({ timeout: 5000 });
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
+    await expect(rack.locator('[aria-label="Joker"]').first()).toBeVisible({ timeout: 5000 });
 
     await ctx1.close();
     await ctx2.close();
@@ -75,8 +75,8 @@ test.describe("Jokers", () => {
     }, [page1, page2]);
 
     const activePlayer = await getActivePlayer(page1, page2);
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
-    await expect(rack.locator("button").filter({ hasText: "★" }).first()).toBeVisible({ timeout: 5000 });
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
+    await expect(rack.locator('[aria-label="Joker"]').first()).toBeVisible({ timeout: 5000 });
 
     await ctx1.close();
     await ctx2.close();
@@ -97,17 +97,15 @@ test.describe("Jokers", () => {
     }, [page1, page2]);
 
     const activePlayer = await getActivePlayer(page1, page2);
-    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
 
     const boardTiles = boardArea.locator("button");
     await expect(boardTiles.first()).toBeVisible({ timeout: 5000 });
     expect(await boardTiles.count()).toBe(3);
 
-    const firstSet = boardArea.locator(".flex.gap-1.p-2").first();
-    const jokerButton = firstSet.locator("button").nth(1);
+    const firstSet = boardArea.locator(".relative.p-3.rounded-lg").first();
+    const jokerButton = firstSet.locator('[aria-label="Joker"]');
     await expect(jokerButton).toBeVisible();
-    const jokerClasses = await jokerButton.getAttribute("class") ?? "";
-    expect(jokerClasses).toContain("bg-gradient");
 
     await ctx1.close();
     await ctx2.close();
@@ -131,11 +129,11 @@ test.describe("Jokers", () => {
     }, [page1, page2]);
 
     const activePlayer = await getActivePlayer(page1, page2);
-    const boardArea = activePlayer.locator(".bg-green-900\\/40");
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
 
-    const firstSet = boardArea.locator(".flex.gap-1.p-2").first();
-    const jokerButton = firstSet.locator("button").nth(1);
+    const firstSet = boardArea.locator(".relative.p-3.rounded-lg").first();
+    const jokerButton = firstSet.locator('[aria-label="Joker"]');
     await jokerButton.click();
 
     const anyRackTile = rack.locator("button").first();
@@ -173,14 +171,14 @@ test.describe("Jokers", () => {
     }, [page1, page2]);
 
     const activePlayer = await getActivePlayer(page1, page2);
-    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
 
     await expect(boardArea.locator("button").first()).toBeVisible({ timeout: 5000 });
 
     const boardTileCount = await boardArea.locator("button").count();
     expect(boardTileCount).toBe(6);
 
-    const sets = boardArea.locator(".flex.gap-1.p-2");
+    const sets = boardArea.locator(".relative.p-3.rounded-lg");
     await expect(sets).toHaveCount(2, { timeout: 5000 });
 
     await ctx1.close();
@@ -203,11 +201,11 @@ test.describe("Jokers", () => {
 
     const activePlayer = await getActivePlayer(page1, page2);
 
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
     const red13 = rack.locator("button").filter({ hasText: "13" }).first();
     await red13.click();
 
-    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
     const board12 = boardArea.locator("button").filter({ hasText: "12" }).first();
     await board12.click();
 

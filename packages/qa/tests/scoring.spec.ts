@@ -34,11 +34,11 @@ async function getActivePlayer(page1: Page, page2: Page): Promise<Page> {
 }
 
 async function winRound(activePlayer: Page, page1: Page, page2: Page) {
-  const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+  const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
   const red13 = rack.locator("button").filter({ hasText: "13" }).first();
   await red13.click();
 
-  const boardArea = activePlayer.locator(".bg-green-900\\/40");
+  const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
   const board12 = boardArea.locator("button").filter({ hasText: "12" }).first();
   await board12.click();
 

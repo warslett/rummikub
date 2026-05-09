@@ -62,7 +62,7 @@ test.describe("Turn Controls and Multi-Select Fixes", () => {
 
     const activePlayer = await getActivePlayer(page1, page2);
 
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
     const allButtons = rack.locator("button");
     await expect(allButtons.first()).toBeVisible({ timeout: 5000 });
 
@@ -123,7 +123,7 @@ test.describe("Turn Controls and Multi-Select Fixes", () => {
 
     const activePlayer = await getActivePlayer(page1, page2);
 
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
     const allButtons = rack.locator("button");
     await expect(allButtons.first()).toBeVisible({ timeout: 5000 });
 
@@ -168,7 +168,7 @@ test.describe("Turn Controls and Multi-Select Fixes", () => {
 
     await expect(activePlayer.getByText(/Initial meld/)).toBeVisible({ timeout: 5000 });
 
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
     const allButtons = rack.locator("button");
     for (let i = 0; i < 3; i++) {
       await allButtons.nth(i).click();
@@ -201,7 +201,7 @@ test.describe("Turn Controls and Multi-Select Fixes", () => {
 
     await expect(activePlayer.getByRole("button", { name: "Undo" })).toBeHidden();
 
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
     const allButtons = rack.locator("button");
     await expect(allButtons.first()).toBeVisible({ timeout: 5000 });
 
@@ -240,7 +240,7 @@ test.describe("Turn Controls and Multi-Select Fixes", () => {
 
     const activePlayer = await getActivePlayer(page1, page2);
 
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
     const allButtons = rack.locator("button");
     await expect(allButtons.first()).toBeVisible({ timeout: 5000 });
 
@@ -289,10 +289,10 @@ test.describe("Turn Controls and Multi-Select Fixes", () => {
     const activePlayer = await getActivePlayer(page1, page2);
 
     // Remove a tile from a run (red-12) to leave 2 tiles in a set → invalid
-    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
     const board12 = boardArea.locator("button").filter({ hasText: "12" }).first();
     await board12.click();
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
     await rack.locator("button").first().click();
 
     // Now the set has only 2 tiles — end turn should show per-set error

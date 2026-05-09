@@ -213,7 +213,7 @@ test.describe("Turn-Based Gameplay", () => {
 
     const activePlayer = (await page1.getByText("Your turn").isVisible()) ? page1 : page2;
 
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
     const firstTile = rack.locator("button").first();
     await firstTile.click();
 

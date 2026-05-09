@@ -1,13 +1,6 @@
 import { resolveJokerValue, isValidSet } from "@rummikub/shared";
 import type { Tile, TileSet } from "@rummikub/shared";
-
-const TILE_COLORS: Record<string, string> = {
-  red: "bg-red-600",
-  blue: "bg-blue-600",
-  orange: "bg-orange-500",
-  black: "bg-gray-900 border-gray-400",
-  joker: "bg-gradient-to-br from-red-500 via-blue-500 to-green-500",
-};
+import { TileSvg } from "./TileSvg";
 
 export function TileComponent({
   tile,
@@ -20,17 +13,15 @@ export function TileComponent({
   onClick: () => void;
   displayValue?: string;
 }) {
-  const bg = TILE_COLORS[tile.color] ?? "bg-gray-500";
   const isJokerTile = tile.color === "joker";
-  const label = isJokerTile ? (displayValue ?? "★") : String(tile.value);
 
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center justify-center w-10 h-14 rounded-md font-bold text-lg shadow-md cursor-pointer select-none
-        ${bg} ${selected ? "ring-2 ring-amber-400 scale-105" : "hover:brightness-110"}`}
+      aria-label={isJokerTile ? "Joker" : `${tile.color} ${tile.value}`}
+      className={`inline-flex items-center justify-center w-[50px] h-[70px] rounded-md cursor-pointer select-none transition-transform ${selected ? "ring-2 ring-amber-400 scale-105 z-10" : "hover:scale-[1.02]"}`}
     >
-      {label}
+      <TileSvg color={tile.color} value={tile.value} displayValue={displayValue} />
     </button>
   );
 }
@@ -54,9 +45,7 @@ export function TileSetComponent({
   validationError?: string | null;
 }) {
   return (
-    <div className={`relative flex flex-wrap gap-1 p-2 rounded group ${
-      validationError ? "ring-2 ring-red-500 bg-red-900/30" : "bg-gray-700/50"
-    }`}>
+    <div className={`relative flex flex-wrap gap-2 p-3 rounded-lg group ${validationError ? "ring-2 ring-red-500 bg-red-900/40" : "bg-black/20"}`}>
       {tileSet.tiles.map((tile) => (
         <TileComponent
           key={tile.id}
@@ -95,7 +84,7 @@ export function Board({
 }) {
   return (
     <div
-      className="flex flex-wrap gap-2 p-4 min-h-48 bg-green-900/40 rounded-lg border border-green-700/30 cursor-pointer"
+      className="flex flex-wrap gap-3 p-5 min-h-[200px] bg-[#0F3815] rounded-xl border border-[#1A5C25] shadow-inner cursor-pointer"
       onClick={(e) => {
         if (e.target === e.currentTarget) onEmptyClick?.();
       }}
@@ -128,7 +117,7 @@ export function Rack({
   onTileClick: (id: string) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-1 p-3 bg-gray-800 rounded-lg">
+    <div className="flex flex-wrap gap-2 p-4 bg-[#2C1810] rounded-lg border-t-4 border-[#1A0F08] shadow-inner">
       {tiles.map((tile) => {
         const isSelected = selectedIds.has(tile.id);
         return (
@@ -137,7 +126,7 @@ export function Rack({
             tile={tile}
             selected={isSelected}
             onClick={() => onTileClick(tile.id)}
-            displayValue={tile.color === "joker" ? "★" : undefined}
+            displayValue={undefined}
           />
         );
       })}
@@ -147,7 +136,7 @@ export function Rack({
 
 export function Pool({ count }: { count: number }) {
   return (
-    <div className="flex items-center gap-2 px-3 py-2 bg-gray-800 rounded-lg">
+    <div className="flex items-center gap-2 px-3 py-2 bg-[#1C1C1C] rounded-lg border border-[#333333]">
       <span className="text-gray-400 text-sm">Pool:</span>
       <span className="font-bold text-amber-400">{count}</span>
     </div>
@@ -164,7 +153,7 @@ export function OpponentInfo({
   disconnected?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-3 px-3 py-2 bg-gray-800 rounded-lg">
+    <div className="flex items-center gap-3 px-3 py-2 bg-[#1C1C1C] rounded-lg border border-[#333333]">
       <span className={`text-sm ${disconnected ? "text-red-400" : "text-gray-400"}`}>{name}</span>
       <span className="text-gray-500">|</span>
       <span className="text-gray-400 text-sm">{rackSize} tiles</span>

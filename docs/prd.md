@@ -375,12 +375,12 @@ These features are explicitly deferred but should be considered in architecture 
 - [x] 3-4 player support
 - [x] Auto-sort run tiles after placement
 - [x] Invalid set feedback (highlighting + descriptive error messages per set)
-- [ ] Valid move highlighting
-- [ ] Visual polish (traditional board game feel)
+- [x] Visual polish (traditional board game feel)
 
 ### Phase 4: Future
 
 - [ ] Chat
+- [ ] Valid move highlighting
 - [ ] Drag-and-drop tile placement
 - [ ] Touch support
 - [ ] AI opponent

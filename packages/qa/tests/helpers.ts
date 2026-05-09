@@ -35,15 +35,18 @@ export async function startGame(player1Page: import("@playwright/test").Page, pl
   await player1Page.getByRole("button", { name: "Start Game" }).click();
   await player1Page.waitForURL(/\/game\//);
   await player2Page.waitForURL(/\/game\//);
+  // Wait for game state to fully load on both pages (Socket.IO state arrives async after navigation)
+  await expect(player1Page.getByText(/Pool:/)).toBeVisible();
+  await expect(player2Page.getByText(/Pool:/)).toBeVisible();
 }
 
 export async function getRackTileCount(page: import("@playwright/test").Page): Promise<number> {
-  const rack = page.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+  const rack = page.locator(".gap-2.p-4.rounded-lg");
   return rack.locator("button").count();
 }
 
 export async function getPoolCount(page: import("@playwright/test").Page): Promise<string> {
-  const poolSection = page.locator("div.bg-gray-800.rounded-lg").filter({ hasText: "Pool:" });
+  const poolSection = page.locator("div.rounded-lg").filter({ hasText: "Pool:" });
   return (await poolSection.locator("span.font-bold.text-amber-400").textContent()) ?? "";
 }
 

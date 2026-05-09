@@ -72,7 +72,7 @@ test.describe("Phase 2 - Core Gameplay", () => {
 
     await expect(activePlayer.getByText(/Initial meld/)).toBeVisible({ timeout: 5000 });
 
-    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
     await expect(rack.locator("button").first()).toBeVisible({ timeout: 5000 });
 
     const allButtons = rack.locator("button");

@@ -87,7 +87,7 @@ test.describe("Spectator Mode", () => {
 
     await expect(page3.locator("span", { hasText: /tiles/ })).toHaveCount(0);
 
-    const rack = page3.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = page3.locator(".gap-2.p-4.rounded-lg");
     await expect(rack).toHaveCount(0);
 
     await ctx1.close();
@@ -191,14 +191,14 @@ test.describe("Spectator Mode", () => {
       hasInitialMeld: { [player1Id]: true, [player2Id]: true },
     });
 
-    await expect(page1.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg")).toBeVisible({ timeout: 5000 });
-    await expect(page2.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg")).toBeVisible({ timeout: 5000 });
+    await expect(page1.locator(".gap-2.p-4.rounded-lg")).toBeVisible({ timeout: 5000 });
+    await expect(page2.locator(".gap-2.p-4.rounded-lg")).toBeVisible({ timeout: 5000 });
 
-    const rack = page1.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rack = page1.locator(".gap-2.p-4.rounded-lg");
     const red13 = rack.locator("button").filter({ hasText: "13" }).first();
     await red13.click();
 
-    const boardArea = page1.locator(".bg-green-900\\/40");
+    const boardArea = page1.locator(".gap-3.p-5.rounded-xl");
     const board12 = boardArea.locator("button").filter({ hasText: "12" }).first();
     await board12.click();
 
