@@ -2,7 +2,7 @@
 
 ## Commands
 
-All commands are run inside the dev container using the prefix `docker compose -f docker-compose.dev.yml run --rm dev`.
+npm is not available on the host machine. All commands MUST be run inside the dev container using the prefix `docker compose -f docker-compose.dev.yml run --rm dev`.
 
 | Command | Description |
 |---------|-------------|

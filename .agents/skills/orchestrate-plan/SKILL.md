@@ -18,6 +18,8 @@ When you have a plan file (typically in `.agents/plans/`) and need to execute it
 
 ## Workflow
 
+Create a todo list with these steps to ensure you execute the plan thoroughly and in the correct order. Each step involves invoking a different sub-agent with specific instructions.
+
 ### Step 1: Implement
 
 Invoke the **implement** subagent. Pass it implementation instructions and the path to the plan file.
@@ -56,6 +58,8 @@ Goal: {WHAT_THE_AUTHOR_WAS_TRYING_TO_ACHIEVE_AND_WHY}
 
 Plan file: {PLAN_PATH}
 ```
+
+Do **not** attempt to address the feedback in the code review yourself. This will be carried out by the implement sub agent in Step 4.
 
 ### Step 4: Address Feedback
 

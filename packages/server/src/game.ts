@@ -1,8 +1,6 @@
 import {
   INITIAL_HAND_SIZE,
   INITIAL_MELD_MINIMUM,
-  isValidSet,
-  isValidBoard,
   calculateSetValue,
   resolveJokerValue,
   generateAllTiles,
@@ -12,6 +10,8 @@ import {
   JOKER_PENALTY,
   MAX_PLAYERS,
   MIN_PLAYERS,
+  getSetValidationError,
+  getBoardValidationErrors,
 } from "@rummikub/shared";
 import type { TileSet, Tile, Player, GameState, GamePhase, PlayerGameState, SpectatorGameState, OpponentInfo } from "@rummikub/shared";
 
@@ -133,8 +133,9 @@ export class Game {
     }
 
     for (const set of sets) {
-      if (!isValidSet(set.tiles)) {
-        throw new Error("Invalid set");
+      const error = getSetValidationError(set.tiles, set.id);
+      if (error) {
+        throw new Error(`Invalid set: ${error.message}`);
       }
     }
 
@@ -160,8 +161,10 @@ export class Game {
       tiles: sortSetTiles(set.tiles),
     }));
 
-    if (!isValidBoard(sortedBoard)) {
-      throw new Error("Resulting board has invalid sets");
+    const boardErrors = getBoardValidationErrors(sortedBoard);
+    if (boardErrors.length > 0) {
+      const details = boardErrors.map(e => e.message).join("; ");
+      throw new Error(`Invalid sets: ${details}`);
     }
 
     const oldBoardTileIds = new Set(this.state.board.flatMap((s) => s.tiles.map((t) => t.id)));

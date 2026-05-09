@@ -12,6 +12,7 @@
 | **TurnAction** | A record of a single action within the current turn — placing a set of tiles (`placeSet`), drawing a tile (`draw`), manipulating the board (`manipulate`), or passing (`pass`). Cleared when the turn ends. Used to enforce initial-meld rules and track whether a player has acted this turn. |
 | **TurnSnapshot** | A capture of the board and current player's rack at the start of a turn. Used by undo to revert all changes made during the turn. Null at the start of a turn; created on first action. |
 | **GameManager** | A singleton registry that maps game codes to `Game` instances. Responsible for generating unique game codes, providing lookup, and periodically cleaning up games inactive for over 24 hours. Not persisted (in-memory only). |
+| **SetValidationError** | A structured validation error for an invalid tile set. Contains the set ID, a machine-readable reason code (`SetValidationReason`), and a human-readable message. Produced by `getSetValidationError` and `getBoardValidationErrors` in the shared package. |
 
 ## Relationships
 
@@ -25,6 +26,7 @@
 | Player → Tile (rack) | 1:N | A player's rack holds their private tiles (0–14+ tiles). |
 | TileSet → Tile | 1:N (3+) | A tile set contains 3 or more tiles that form a valid run or group. |
 | GameManager → Game | 1:N | The manager holds all active games indexed by game code. |
+| Board validation → SetValidationError | 1:0..N | A board validation produces zero or more errors, one per invalid set. |
 
 ## Entity-Relationship Diagram
 

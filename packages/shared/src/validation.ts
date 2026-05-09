@@ -65,6 +65,110 @@ export function isValidBoard(board: TileSet[]): boolean {
   return true;
 }
 
+export type SetValidationReason =
+  | "too_few_tiles"
+  | "too_many_tiles"
+  | "run_mixed_colors"
+  | "run_non_consecutive"
+  | "group_mixed_values"
+  | "group_duplicate_colors"
+  | "all_jokers"
+  | "not_valid";
+
+export const SET_ERROR_MESSAGES: Record<SetValidationReason, string> = {
+  too_few_tiles: "Needs at least 3 tiles",
+  too_many_tiles: "Group cannot have more than 4 tiles",
+  run_mixed_colors: "All tiles in a run must be the same color",
+  run_non_consecutive: "Run must have consecutive values",
+  group_mixed_values: "All tiles in a group must have the same value",
+  group_duplicate_colors: "Group cannot have duplicate colors",
+  all_jokers: "Set must contain at least one non-joker tile",
+  not_valid: "Not a valid run or group",
+};
+
+export interface SetValidationError {
+  setId: string;
+  reason: SetValidationReason;
+  message: string;
+}
+
+function validateRunDetails(tiles: Tile[]): { reason: SetValidationReason; message: string } {
+  const nonJokers = tiles.filter((t) => !isJoker(t));
+  const sorted = [...nonJokers].sort((a, b) => (a.value as number) - (b.value as number));
+  for (let i = 1; i < sorted.length; i++) {
+    const gap = (sorted[i].value as number) - (sorted[i - 1].value as number) - 1;
+    if (gap > 0) {
+      const expected = (sorted[i - 1].value as number) + 1;
+      return {
+        reason: "run_non_consecutive",
+        message: `Run has a gap: expected ${expected} between ${sorted[i - 1].value} and ${sorted[i].value}`,
+      };
+    }
+  }
+  return {
+    reason: "run_non_consecutive",
+    message: SET_ERROR_MESSAGES.run_non_consecutive,
+  };
+}
+
+export function getSetValidationError(tiles: Tile[], setId: string): SetValidationError | null {
+  const nonJokers = tiles.filter((t) => !isJoker(t));
+  if (nonJokers.length === 0) {
+    return { setId, reason: "all_jokers", message: SET_ERROR_MESSAGES.all_jokers };
+  }
+
+  if (isValidSet(tiles)) return null;
+
+  if (tiles.length < MIN_SET_SIZE) {
+    return { setId, reason: "too_few_tiles", message: SET_ERROR_MESSAGES.too_few_tiles };
+  }
+
+  if (tiles.length > MAX_GROUP_SIZE) {
+    return { setId, reason: "too_many_tiles", message: SET_ERROR_MESSAGES.too_many_tiles };
+  }
+
+  const allSameColor = nonJokers.every((t) => t.color === nonJokers[0].color);
+  const allSameValue = nonJokers.every((t) => t.value === nonJokers[0].value);
+
+  if (allSameColor) {
+    const result = validateRunDetails(tiles);
+    return { setId, reason: result.reason, message: result.message };
+  }
+
+  const sortedValues = [...nonJokers].map((t) => t.value as number).sort((a, b) => a - b);
+  const isConsecutive = sortedValues.every((v, i, a) => i === 0 || v === a[i - 1] + 1);
+
+  if (isConsecutive) {
+    return { setId, reason: "run_mixed_colors", message: SET_ERROR_MESSAGES.run_mixed_colors };
+  }
+
+  if (allSameValue) {
+    const seenColors = new Set<string>();
+    for (const t of nonJokers) {
+      if (seenColors.has(t.color)) {
+        return { setId, reason: "group_duplicate_colors", message: SET_ERROR_MESSAGES.group_duplicate_colors };
+      }
+      seenColors.add(t.color);
+    }
+  }
+
+  const allDifferentColors = new Set(nonJokers.map((t) => t.color)).size === nonJokers.length;
+  if (allDifferentColors) {
+    return { setId, reason: "group_mixed_values", message: SET_ERROR_MESSAGES.group_mixed_values };
+  }
+
+  return { setId, reason: "not_valid", message: SET_ERROR_MESSAGES.not_valid };
+}
+
+export function getBoardValidationErrors(board: TileSet[]): SetValidationError[] {
+  const errors: SetValidationError[] = [];
+  for (const set of board) {
+    const error = getSetValidationError(set.tiles, set.id);
+    if (error) errors.push(error);
+  }
+  return errors;
+}
+
 export function calculateSetValue(tiles: Tile[]): number {
   return tiles.reduce((sum, t) => {
     if (isJoker(t)) {

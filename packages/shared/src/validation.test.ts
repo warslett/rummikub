@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isValidRun, isValidGroup, isValidSet, isValidBoard, calculateSetValue, resolveJokerValue, formSetsFromTiles, sortSetTiles } from "./validation";
+import { isValidRun, isValidGroup, isValidSet, isValidBoard, calculateSetValue, resolveJokerValue, formSetsFromTiles, sortSetTiles, getSetValidationError, getBoardValidationErrors } from "./validation";
 import type { Tile, TileSet } from "./types";
 
 function tile(color: Tile["color"], value: number, id?: string): Tile {
@@ -461,5 +461,152 @@ describe("sortSetTiles", () => {
     const tiles = [tile("red", 7), tile("red", 3), tile("red", 5), tile("red", 4), tile("red", 6)];
     const result = sortSetTiles(tiles);
     expect(result.map((t) => t.value)).toEqual([3, 4, 5, 6, 7]);
+  });
+});
+
+describe("getSetValidationError", () => {
+  it("should return null for a valid run of 3 consecutive same-color tiles", () => {
+    const tiles = [tile("red", 3), tile("red", 4), tile("red", 5)];
+    expect(getSetValidationError(tiles, "s1")).toBeNull();
+  });
+
+  it("should return null for a valid group of same-value different-color tiles", () => {
+    const tiles = [tile("red", 7), tile("blue", 7), tile("black", 7)];
+    expect(getSetValidationError(tiles, "s1")).toBeNull();
+  });
+
+  it("should return too_few_tiles for a set with 2 tiles", () => {
+    const tiles = [tile("red", 3), tile("red", 4)];
+    const result = getSetValidationError(tiles, "s1");
+    expect(result).not.toBeNull();
+    expect(result!.reason).toBe("too_few_tiles");
+    expect(result!.setId).toBe("s1");
+  });
+
+  it("should return too_many_tiles for a set with 5 tiles that is not a run", () => {
+    const tiles = [tile("red", 7), tile("blue", 7), tile("black", 7), tile("orange", 7), tile("red", 7, "red-7-b")];
+    const result = getSetValidationError(tiles, "s1");
+    expect(result).not.toBeNull();
+    expect(result!.reason).toBe("too_many_tiles");
+  });
+
+  it("should return all_jokers when every tile is a joker", () => {
+    const tiles = [joker("j1"), joker("j2"), joker("j3")];
+    const result = getSetValidationError(tiles, "s1");
+    expect(result).not.toBeNull();
+    expect(result!.reason).toBe("all_jokers");
+  });
+
+  it("should return run_mixed_colors when tiles have consecutive values but mixed colors", () => {
+    const tiles = [tile("red", 3), tile("blue", 4), tile("red", 5)];
+    const result = getSetValidationError(tiles, "s1");
+    expect(result).not.toBeNull();
+    expect(result!.reason).toBe("run_mixed_colors");
+  });
+
+  it("should return run_non_consecutive for a run with a gap", () => {
+    const tiles = [tile("red", 3), tile("red", 4), tile("red", 6)];
+    const result = getSetValidationError(tiles, "s1");
+    expect(result).not.toBeNull();
+    expect(result!.reason).toBe("run_non_consecutive");
+  });
+
+  it("should return group_duplicate_colors for a group with duplicate colors", () => {
+    const tiles = [tile("red", 7), tile("red", 7, "red-7-b"), tile("blue", 7)];
+    const result = getSetValidationError(tiles, "s1");
+    expect(result).not.toBeNull();
+    expect(result!.reason).toBe("group_duplicate_colors");
+  });
+
+  it("should return not_valid for a set that is neither a run nor a group", () => {
+    const tiles = [tile("red", 3), tile("blue", 7), tile("red", 10)];
+    const result = getSetValidationError(tiles, "s1");
+    expect(result).not.toBeNull();
+    expect(result!.reason).toBe("not_valid");
+  });
+
+  it("should return null for a valid run with a joker", () => {
+    const tiles = [tile("red", 3), joker("j1"), tile("red", 5)];
+    expect(getSetValidationError(tiles, "s1")).toBeNull();
+  });
+
+  it("should return null for a valid group with a joker", () => {
+    const tiles = [tile("red", 7), joker("j1"), tile("black", 7)];
+    expect(getSetValidationError(tiles, "s1")).toBeNull();
+  });
+
+  it("should return too_few_tiles for a single tile", () => {
+    const tiles = [tile("red", 3)];
+    const result = getSetValidationError(tiles, "s1");
+    expect(result).not.toBeNull();
+    expect(result!.reason).toBe("too_few_tiles");
+  });
+
+  it("should return group_duplicate_colors for two reds and one blue with same value", () => {
+    const tiles = [tile("red", 7), tile("blue", 7), tile("red", 7, "red-7-b")];
+    const result = getSetValidationError(tiles, "s1");
+    expect(result).not.toBeNull();
+    expect(result!.reason).toBe("group_duplicate_colors");
+  });
+
+  it("should return run_mixed_colors for a set with consecutive values across different colors", () => {
+    const tiles = [tile("red", 3), tile("blue", 4), tile("black", 5)];
+    const result = getSetValidationError(tiles, "s1");
+    expect(result).not.toBeNull();
+    expect(result!.reason).toBe("run_mixed_colors");
+  });
+
+  it("should return group_mixed_values when colors suggest a group but values differ", () => {
+    const tiles = [tile("red", 7), tile("blue", 8), tile("black", 7)];
+    const result = getSetValidationError(tiles, "s1");
+    expect(result).not.toBeNull();
+    expect(result!.reason).toBe("group_mixed_values");
+  });
+});
+
+describe("getBoardValidationErrors", () => {
+  it("should return an empty array for a valid board", () => {
+    const board: TileSet[] = [
+      { id: "s1", tiles: [tile("red", 3), tile("red", 4), tile("red", 5)] },
+      { id: "s2", tiles: [tile("blue", 7), tile("orange", 7), tile("black", 7)] },
+    ];
+    expect(getBoardValidationErrors(board)).toEqual([]);
+  });
+
+  it("should return errors only for invalid sets", () => {
+    const board: TileSet[] = [
+      { id: "s1", tiles: [tile("red", 3), tile("red", 4), tile("red", 5)] },
+      { id: "s2", tiles: [tile("blue", 7), tile("blue", 7, "blue-7-b")] },
+    ];
+    const errors = getBoardValidationErrors(board);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].setId).toBe("s2");
+    expect(errors[0].reason).toBe("too_few_tiles");
+  });
+
+  it("should return errors for multiple invalid sets", () => {
+    const board: TileSet[] = [
+      { id: "s1", tiles: [tile("red", 3), tile("red", 4)] },
+      { id: "s2", tiles: [tile("blue", 7), tile("red", 7, "red-7-b"), tile("blue", 7, "blue-7-b")] },
+    ];
+    const errors = getBoardValidationErrors(board);
+    expect(errors).toHaveLength(2);
+    expect(errors[0].setId).toBe("s1");
+    expect(errors[0].reason).toBe("too_few_tiles");
+    expect(errors[1].setId).toBe("s2");
+    expect(errors[1].reason).toBe("group_duplicate_colors");
+  });
+
+  it("should return an empty array for an empty board", () => {
+    expect(getBoardValidationErrors([])).toEqual([]);
+  });
+
+  it("should return errors for a board with all-joker set", () => {
+    const board: TileSet[] = [
+      { id: "s1", tiles: [joker("j1"), joker("j2"), joker("j3")] },
+    ];
+    const errors = getBoardValidationErrors(board);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].reason).toBe("all_jokers");
   });
 });

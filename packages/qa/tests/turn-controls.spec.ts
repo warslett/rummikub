@@ -271,4 +271,81 @@ test.describe("Turn Controls and Multi-Select Fixes", () => {
     await ctx1.close();
     await ctx2.close();
   });
+
+  test("TC-65: Ending turn with invalid set shows per-set error descriptions", async ({ browser }) => {
+    const { page1, page2, ctx1, ctx2, gameCode, player1Id, player2Id } = await createAndStartGame(browser);
+
+    await seedAndWait(gameCode, {
+      board: [{ id: "s1", tiles: [tile("red", 10, "red-10-a"), tile("red", 11, "red-11-a"), tile("red", 12, "red-12-a")] }],
+      racks: {
+        [player1Id]: [tile("blue", 3, "blue-3-a")],
+        [player2Id]: [tile("orange", 1, "orange-1-a")],
+      },
+      pool: [tile("black", 1, "black-1-a")],
+      currentTurnPlayerId: player1Id,
+      hasInitialMeld: { [player1Id]: true, [player2Id]: true },
+    }, [page1, page2]);
+
+    const activePlayer = await getActivePlayer(page1, page2);
+
+    // Remove a tile from a run (red-12) to leave 2 tiles in a set → invalid
+    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const board12 = boardArea.locator("button").filter({ hasText: "12" }).first();
+    await board12.click();
+    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    await rack.locator("button").first().click();
+
+    // Now the set has only 2 tiles — end turn should show per-set error
+    await activePlayer.getByRole("button", { name: "End Turn" }).click();
+    await activePlayer.waitForTimeout(500);
+
+    // Verify per-set error message is shown (not the generic one)
+    await expect(activePlayer.getByText(/invalid set/i)).toBeVisible({ timeout: 5000 });
+
+    // Hover over the invalid set to reveal its tooltip
+    const invalidSet = activePlayer.locator('[class*="ring-red-500"]').first();
+    await invalidSet.hover();
+    await expect(activePlayer.getByText(/Needs at least 3 tiles/i)).toBeVisible({ timeout: 5000 });
+
+    // Verify the invalid set has a red border ring
+    const setContainers = activePlayer.locator('[class*="ring-red-500"]');
+    await expect(setContainers.first()).toBeVisible();
+
+    await ctx1.close();
+    await ctx2.close();
+  });
+
+  test("TC-66: Valid sets are not highlighted", async ({ browser }) => {
+    const { page1, page2, ctx1, ctx2, gameCode, player1Id, player2Id } = await createAndStartGame(browser);
+
+    await seedAndWait(gameCode, {
+      board: [
+        { id: "s1", tiles: [tile("red", 3, "red-3-a"), tile("red", 4, "red-4-a"), tile("red", 5, "red-5-a")] },
+        { id: "s2", tiles: [tile("blue", 7, "blue-7-a"), tile("orange", 7, "orange-7-a"), tile("black", 7, "black-7-a")] },
+      ],
+      racks: {
+        [player1Id]: [tile("red", 6, "red-6-a")],
+        [player2Id]: [tile("orange", 1, "orange-1-a")],
+      },
+      pool: [tile("black", 1, "black-1-a")],
+      currentTurnPlayerId: player1Id,
+      hasInitialMeld: { [player1Id]: true, [player2Id]: true },
+    }, [page1, page2]);
+
+    const activePlayer = await getActivePlayer(page1, page2);
+
+    // Verify there are no error tooltips on the board
+    const errorTooltips = activePlayer.locator('[role="tooltip"]');
+    await expect(errorTooltips).toHaveCount(0);
+
+    // Verify there are no red ring borders on the board
+    const redRings = activePlayer.locator('[class*="ring-red-500"]');
+    await expect(redRings).toHaveCount(0);
+
+    // Verify the error message area is empty
+    await expect(activePlayer.getByText(/invalid set/i)).toBeHidden();
+
+    await ctx1.close();
+    await ctx2.close();
+  });
 });

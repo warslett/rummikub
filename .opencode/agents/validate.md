@@ -8,10 +8,13 @@ permission:
   bash:
     "*": ask
     "docker compose*": allow
-    "mkdir *": allow
+    "mkdir*": allow
     "curl -s http://localhost:3000/health": allow
     "curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173/": allow
     "docker rm*": allow
+    "echo*": allow
+    "sleep*": allow
+    "git diff*": allow
   read: allow
   glob: allow
   grep: allow

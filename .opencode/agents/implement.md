@@ -13,6 +13,7 @@ permission:
     "curl -s http://localhost:3000/health": allow
     "curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173/": allow
     "docker rm*": allow
+    "tail*": allow
   read: allow
   glob: allow
   grep: allow

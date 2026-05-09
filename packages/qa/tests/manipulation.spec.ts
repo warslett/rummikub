@@ -458,4 +458,156 @@ test.describe("Board Manipulation", () => {
     await ctx1.close();
     await ctx2.close();
   });
+
+  test("TC-67: Removing a tile from a run highlights the remaining tiles as invalid", async ({ browser }) => {
+    const { page1, page2, ctx1, ctx2, gameCode, player1Id, player2Id } = await createAndStartGame(browser);
+
+    await seedAndWait(gameCode, {
+      board: [{ id: "s1", tiles: [tile("red", 3, "red-3-a"), tile("red", 4, "red-4-a"), tile("red", 5, "red-5-a")] }],
+      racks: {
+        [player1Id]: [tile("blue", 3, "blue-3-a")],
+        [player2Id]: [tile("orange", 1, "orange-1-a")],
+      },
+      pool: [tile("black", 1, "black-1-a")],
+      currentTurnPlayerId: player1Id,
+      hasInitialMeld: { [player1Id]: true, [player2Id]: true },
+    }, [page1, page2]);
+
+    const activePlayer = await getActivePlayer(page1, page2);
+
+    // Click a board tile to select it, then click the rack to move it back
+    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const board5 = boardArea.locator("button").filter({ hasText: "5" }).first();
+    await board5.click();
+
+    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const rackTile = rack.locator("button").first();
+    await rackTile.click();
+    await activePlayer.waitForTimeout(300);
+
+    // Hover over the invalid set to reveal its tooltip
+    const invalidSet = activePlayer.locator('[class*="ring-red-500"]').first();
+    await invalidSet.hover();
+
+    // Verify the remaining 2-tile set shows "Needs at least 3 tiles"
+    await expect(activePlayer.getByText("Needs at least 3 tiles")).toBeVisible({ timeout: 5000 });
+
+    // Verify the invalid set has a red border ring
+    const redRings = activePlayer.locator('[class*="ring-red-500"]');
+    await expect(redRings.first()).toBeVisible();
+
+    await ctx1.close();
+    await ctx2.close();
+  });
+
+  test("TC-68: Real-time highlighting updates as tiles are rearranged", async ({ browser }) => {
+    const { page1, page2, ctx1, ctx2, gameCode, player1Id, player2Id } = await createAndStartGame(browser);
+
+    await seedAndWait(gameCode, {
+      board: [{ id: "s1", tiles: [tile("red", 3, "red-3-a"), tile("red", 4, "red-4-a"), tile("red", 6, "red-6-a")] }],
+      racks: {
+        [player1Id]: [tile("red", 5, "red-5-a"), tile("blue", 3, "blue-3-a")],
+        [player2Id]: [tile("orange", 1, "orange-1-a")],
+      },
+      pool: [tile("black", 1, "black-1-a")],
+      currentTurnPlayerId: player1Id,
+      hasInitialMeld: { [player1Id]: true, [player2Id]: true },
+    }, [page1, page2]);
+
+    const activePlayer = await getActivePlayer(page1, page2);
+
+    // Hover over the invalid set to reveal its tooltip
+    const invalidSet = activePlayer.locator('[class*="ring-red-500"]').first();
+    await invalidSet.hover();
+
+    // Verify the invalid run shows an error about the gap
+    await expect(activePlayer.getByText("Run has a gap: expected 5 between 4 and 6")).toBeVisible({ timeout: 5000 });
+
+    // Add red-5 from rack to fill the gap
+    const rack = activePlayer.locator(".flex.flex-wrap.gap-1.p-3.bg-gray-800.rounded-lg");
+    const red5Tile = rack.locator("button").filter({ hasText: "5" }).first();
+    await red5Tile.click();
+
+    const boardArea = activePlayer.locator(".bg-green-900\\/40");
+    const board4 = boardArea.locator("button").filter({ hasText: "4" }).first();
+    await board4.click();
+    await activePlayer.waitForTimeout(300);
+
+    // Verify the set no longer shows as invalid
+    await expect(activePlayer.getByText("Run has a gap: expected 5 between 4 and 6")).toBeHidden();
+
+    // End turn should succeed
+    await activePlayer.getByRole("button", { name: "End Turn" }).click();
+    const otherPlayer = activePlayer === page1 ? page2 : page1;
+    await expect(otherPlayer.getByText("Your turn")).toBeVisible({ timeout: 5000 });
+
+    await ctx1.close();
+    await ctx2.close();
+  });
+
+  test("TC-69: Multiple invalid sets each show their own error", async ({ browser }) => {
+    const { page1, page2, ctx1, ctx2, gameCode, player1Id, player2Id } = await createAndStartGame(browser);
+
+    await seedAndWait(gameCode, {
+      board: [
+        { id: "s1", tiles: [tile("red", 3, "red-3-a"), tile("red", 4, "red-4-a"), tile("red", 6, "red-6-a")] },
+        { id: "s2", tiles: [tile("red", 7, "red-7-a"), tile("red", 7, "red-7-b"), tile("blue", 7, "blue-7-a")] },
+      ],
+      racks: {
+        [player1Id]: [tile("red", 5, "red-5-a"), tile("blue", 3, "blue-3-a")],
+        [player2Id]: [tile("orange", 1, "orange-1-a")],
+      },
+      pool: [tile("black", 1, "black-1-a")],
+      currentTurnPlayerId: player1Id,
+      hasInitialMeld: { [player1Id]: true, [player2Id]: true },
+    }, [page1, page2]);
+
+    const activePlayer = await getActivePlayer(page1, page2);
+
+    // Verify two red ring containers
+    const redRings = activePlayer.locator('[class*="ring-red-500"]');
+    await expect(redRings).toHaveCount(2);
+
+    // Hover over each invalid set to verify its tooltip
+    await redRings.nth(0).hover();
+    await expect(activePlayer.getByText("Run has a gap: expected 5 between 4 and 6")).toBeVisible({ timeout: 5000 });
+
+    await activePlayer.mouse.move(0, 0);
+    await redRings.nth(1).hover();
+    await expect(activePlayer.getByText("Group cannot have duplicate colors")).toBeVisible({ timeout: 5000 });
+
+    await ctx1.close();
+    await ctx2.close();
+  });
+
+  test("TC-70: Group with duplicate colors shows error message", async ({ browser }) => {
+    const { page1, page2, ctx1, ctx2, gameCode, player1Id, player2Id } = await createAndStartGame(browser);
+
+    await seedAndWait(gameCode, {
+      board: [{ id: "s1", tiles: [tile("red", 7, "red-7-a"), tile("red", 7, "red-7-b"), tile("blue", 7, "blue-7-a")] }],
+      racks: {
+        [player1Id]: [tile("orange", 7, "orange-7-a"), tile("blue", 3, "blue-3-a")],
+        [player2Id]: [tile("orange", 1, "orange-1-a")],
+      },
+      pool: [tile("black", 1, "black-1-a")],
+      currentTurnPlayerId: player1Id,
+      hasInitialMeld: { [player1Id]: true, [player2Id]: true },
+    }, [page1, page2]);
+
+    const activePlayer = await getActivePlayer(page1, page2);
+
+    // Hover over the invalid set to reveal its tooltip
+    const invalidSet = activePlayer.locator('[class*="ring-red-500"]').first();
+    await invalidSet.hover();
+
+    // Verify the duplicate color error message
+    await expect(activePlayer.getByText("Group cannot have duplicate colors")).toBeVisible({ timeout: 5000 });
+
+    // Verify a red ring is shown
+    const redRings = activePlayer.locator('[class*="ring-red-500"]');
+    await expect(redRings.first()).toBeVisible();
+
+    await ctx1.close();
+    await ctx2.close();
+  });
 });

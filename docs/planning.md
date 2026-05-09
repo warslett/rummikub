@@ -20,6 +20,7 @@ Do not start implementation until the plan is complete and the user has confirme
     - Implementation steps (ordered, each small enough to test) — do NOT include generic verification steps (lint, typecheck, unit tests); these are handled by the validate subagent during execution
     - Affected files and packages
     - Manual validation steps for the user to perform after implementation
+    - Any changes to documentation including prd.md, README.md and any information in docs.md
 
 ## See Also
 

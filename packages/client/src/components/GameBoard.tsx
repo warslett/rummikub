@@ -46,13 +46,17 @@ export function TileSetComponent({
   tileSet,
   selectedTileId,
   onTileClick,
+  validationError,
 }: {
   tileSet: TileSet;
   selectedTileId?: string | null;
   onTileClick?: (tileId: string) => void;
+  validationError?: string | null;
 }) {
   return (
-    <div className="flex gap-1 p-2 bg-gray-700/50 rounded">
+    <div className={`relative flex flex-wrap gap-1 p-2 rounded group ${
+      validationError ? "ring-2 ring-red-500 bg-red-900/30" : "bg-gray-700/50"
+    }`}>
       {tileSet.tiles.map((tile) => (
         <TileComponent
           key={tile.id}
@@ -62,6 +66,14 @@ export function TileSetComponent({
           displayValue={getJokerDisplayValue(tile, tileSet.tiles)}
         />
       ))}
+      {validationError && (
+        <div
+          role="tooltip"
+          className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-1 bg-red-900 text-red-200 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50 pointer-events-none max-w-xs text-center"
+        >
+          {validationError}
+        </div>
+      )}
     </div>
   );
 }
@@ -72,12 +84,14 @@ export function Board({
   selectedTileId,
   onTileClick,
   onEmptyClick,
+  validationErrors,
 }: {
   board: TileSet[];
   isEditable?: boolean;
   selectedTileId?: string | null;
   onTileClick?: (tileId: string) => void;
   onEmptyClick?: () => void;
+  validationErrors?: Map<string, string>;
 }) {
   return (
     <div
@@ -97,6 +111,7 @@ export function Board({
           tileSet={set}
           selectedTileId={selectedTileId}
           onTileClick={onTileClick}
+          validationError={validationErrors?.get(set.id)}
         />
       ))}
     </div>

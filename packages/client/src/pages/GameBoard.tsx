@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useGame } from "../contexts/GameContext";
 import { socket } from "../socket";
 import { Board, Rack, Pool, OpponentInfo, Controls } from "../components/GameBoard";
-import { isValidBoard, formSetsFromTiles, sortSetTiles, JOKER_COLOR } from "@rummikub/shared";
+import { formSetsFromTiles, sortSetTiles, JOKER_COLOR, getBoardValidationErrors } from "@rummikub/shared";
 import type { Tile, TileSet } from "@rummikub/shared";
 function isJoker(tile: Tile): boolean {
   return tile.color === JOKER_COLOR;
@@ -61,6 +61,20 @@ export function GameBoard() {
   const rack = workingRack ?? serverRack;
   const hasChanges = workingBoard !== null;
   const hasPlayedThisTurn = serverHasPlayedThisTurn || hasChanges;
+
+  const validationErrors = (isYourTurn && canManipulate)
+    ? computeValidationErrors(board)
+    : null;
+
+  function computeValidationErrors(b: TileSet[]): Map<string, string> | null {
+    const errors = getBoardValidationErrors(b);
+    if (errors.length === 0) return null;
+    const map = new Map<string, string>();
+    for (const err of errors) {
+      map.set(err.setId, err.message);
+    }
+    return map;
+  }
 
   useEffect(() => {
     if (!gameState) return;
@@ -263,8 +277,9 @@ export function GameBoard() {
 
   function handleEndTurn() {
     if (hasChanges && workingBoard) {
-      if (!isValidBoard(workingBoard)) {
-        setError("Board has invalid sets. Fix or undo before ending turn.");
+      const boardErrors = getBoardValidationErrors(workingBoard);
+      if (boardErrors.length > 0) {
+        setError(`${boardErrors.length} invalid set${boardErrors.length > 1 ? 's' : ''}. Check highlighted sets.`);
         return;
       }
 
@@ -384,6 +399,7 @@ export function GameBoard() {
         selectedTileId={selectedTileId}
         onTileClick={handleBoardTileClick}
         onEmptyClick={handleBoardEmptyClick}
+        validationErrors={validationErrors ?? undefined}
       />
 
       {isYourTurn && !canManipulate && !hasPlayedThisTurn && (

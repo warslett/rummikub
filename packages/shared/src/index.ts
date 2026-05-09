@@ -1,4 +1,5 @@
-export { isValidRun, isValidGroup, isValidSet, isValidBoard, calculateSetValue, resolveJokerValue, formSetsFromTiles, sortSetTiles } from "./validation.js";
+export { isValidRun, isValidGroup, isValidSet, isValidBoard, calculateSetValue, resolveJokerValue, formSetsFromTiles, sortSetTiles, getSetValidationError, getBoardValidationErrors, SET_ERROR_MESSAGES } from "./validation.js";
+export type { SetValidationReason, SetValidationError } from "./validation.js";
 export { generateAllTiles, shuffleTiles } from "./tiles.js";
 export {
   COLORS,

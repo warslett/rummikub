@@ -35,6 +35,7 @@ The official Rummikub rules are maintained in [rules.md](rules.md) as the single
 | F-12.1 | When a tile is placed into a set that forms a valid run, the tiles are automatically sorted in ascending value order with jokers in their correct positions; groups are not reordered |
 | F-13 | The initial meld requirement (30+ points) is enforced |
 | F-14 | The server validates all moves before applying them. Invalid moves are rejected with a clear error message |
+| F-14.1 | When board validation fails, invalid sets are highlighted on the board with a red border and a descriptive error label explaining why each set is invalid (e.g., "Needs at least 3 tiles", "Run must have consecutive values", "Group cannot have duplicate colors") |
 | F-15 | A player can end their turn only when all board tiles form valid sets |
 | F-16 | If a player cannot play, they must draw a tile from the pool (if available) |
 | F-17 | The pool tile count is visible to both players |
@@ -373,6 +374,7 @@ These features are explicitly deferred but should be considered in architecture 
 - [x] Spectator mode
 - [x] 3-4 player support
 - [x] Auto-sort run tiles after placement
+- [x] Invalid set feedback (highlighting + descriptive error messages per set)
 - [ ] Valid move highlighting
 - [ ] Visual polish (traditional board game feel)
 
