@@ -4,6 +4,22 @@ export interface AiConfig {
   apiKey: string;
   defaultModel: string;
   requestTimeoutMs: number;
+  maxRetries: number;
+  retryBaseMs: number;
+  maxToolIterations: number;
+  malformedLimit: number;
+  contextTokenLimit: number;
+  compactKeepTurns: number;
+}
+
+function positiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function nonNegativeInt(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 export const aiConfig: Readonly<AiConfig> = Object.freeze({
@@ -20,7 +36,24 @@ export const aiConfig: Readonly<AiConfig> = Object.freeze({
     return process.env.AI_DEFAULT_MODEL || "scripted-default";
   },
   get requestTimeoutMs(): number {
-    const parsed = Number(process.env.AI_REQUEST_TIMEOUT_MS);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 300000;
+    return positiveInt(process.env.AI_REQUEST_TIMEOUT_MS, 300000);
+  },
+  get maxRetries(): number {
+    return nonNegativeInt(process.env.AI_MAX_RETRIES, 3);
+  },
+  get retryBaseMs(): number {
+    return positiveInt(process.env.AI_RETRY_BASE_MS, 1000);
+  },
+  get maxToolIterations(): number {
+    return positiveInt(process.env.AI_MAX_TOOL_ITERATIONS, 25);
+  },
+  get malformedLimit(): number {
+    return nonNegativeInt(process.env.AI_MALFORMED_LIMIT, 2);
+  },
+  get contextTokenLimit(): number {
+    return positiveInt(process.env.AI_CONTEXT_TOKEN_LIMIT, 100000);
+  },
+  get compactKeepTurns(): number {
+    return nonNegativeInt(process.env.AI_COMPACT_KEEP_TURNS, 6);
   },
 });

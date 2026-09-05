@@ -12,6 +12,12 @@ describe("aiConfig", () => {
     expect(aiConfig.apiKey).toBe("");
     expect(aiConfig.defaultModel).toBe("scripted-default");
     expect(aiConfig.requestTimeoutMs).toBe(300000);
+    expect(aiConfig.maxRetries).toBe(3);
+    expect(aiConfig.retryBaseMs).toBe(1000);
+    expect(aiConfig.maxToolIterations).toBe(25);
+    expect(aiConfig.malformedLimit).toBe(2);
+    expect(aiConfig.contextTokenLimit).toBe(100000);
+    expect(aiConfig.compactKeepTurns).toBe(6);
   });
 
   it("should return env overrides for provider, baseUrl, apiKey and defaultModel", () => {
@@ -37,5 +43,47 @@ describe("aiConfig", () => {
 
     vi.stubEnv("AI_REQUEST_TIMEOUT_MS", "-5");
     expect(aiConfig.requestTimeoutMs).toBe(300000);
+  });
+
+  it("should return env overrides for robustness knobs", () => {
+    vi.stubEnv("AI_MAX_RETRIES", "5");
+    vi.stubEnv("AI_RETRY_BASE_MS", "500");
+    vi.stubEnv("AI_MAX_TOOL_ITERATIONS", "40");
+    vi.stubEnv("AI_MALFORMED_LIMIT", "3");
+    vi.stubEnv("AI_CONTEXT_TOKEN_LIMIT", "20000");
+    vi.stubEnv("AI_COMPACT_KEEP_TURNS", "4");
+
+    expect(aiConfig.maxRetries).toBe(5);
+    expect(aiConfig.retryBaseMs).toBe(500);
+    expect(aiConfig.maxToolIterations).toBe(40);
+    expect(aiConfig.malformedLimit).toBe(3);
+    expect(aiConfig.contextTokenLimit).toBe(20000);
+    expect(aiConfig.compactKeepTurns).toBe(4);
+  });
+
+  it("should fall back to defaults for invalid robustness knob values", () => {
+    vi.stubEnv("AI_MAX_RETRIES", "abc");
+    vi.stubEnv("AI_RETRY_BASE_MS", "-1");
+    vi.stubEnv("AI_MAX_TOOL_ITERATIONS", "0");
+    vi.stubEnv("AI_MALFORMED_LIMIT", "x");
+    vi.stubEnv("AI_CONTEXT_TOKEN_LIMIT", "nope");
+    vi.stubEnv("AI_COMPACT_KEEP_TURNS", "-3");
+
+    expect(aiConfig.maxRetries).toBe(3);
+    expect(aiConfig.retryBaseMs).toBe(1000);
+    expect(aiConfig.maxToolIterations).toBe(25);
+    expect(aiConfig.malformedLimit).toBe(2);
+    expect(aiConfig.contextTokenLimit).toBe(100000);
+    expect(aiConfig.compactKeepTurns).toBe(6);
+  });
+
+  it("should honor 0 for knobs where it is meaningful", () => {
+    vi.stubEnv("AI_MAX_RETRIES", "0");
+    vi.stubEnv("AI_MALFORMED_LIMIT", "0");
+    vi.stubEnv("AI_COMPACT_KEEP_TURNS", "0");
+
+    expect(aiConfig.maxRetries).toBe(0);
+    expect(aiConfig.malformedLimit).toBe(0);
+    expect(aiConfig.compactKeepTurns).toBe(0);
   });
 });

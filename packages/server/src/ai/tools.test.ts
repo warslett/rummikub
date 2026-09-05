@@ -357,4 +357,42 @@ describe("executeTool", () => {
       expect(outcome.turnEnded).toBe(false);
     });
   });
+
+  describe("malformed flag", () => {
+    it("should set malformed for unknown tool names", () => {
+      const outcome = executeTool(controller, "explode_game", {});
+      expect(outcome.malformed).toBe(true);
+    });
+
+    it("should set malformed for unparseable JSON args", () => {
+      const outcome = executeTool(controller, "play_sets", "{not json");
+      expect(outcome.malformed).toBe(true);
+    });
+
+    it("should set malformed for non-object args", () => {
+      const outcome = executeTool(controller, "play_sets", 42);
+      expect(outcome.malformed).toBe(true);
+    });
+
+    it("should set malformed for non-array sets argument", () => {
+      const outcome = executeTool(controller, "play_sets", JSON.stringify({ sets: "nope" }));
+      expect(outcome.malformed).toBe(true);
+    });
+
+    it("should NOT set malformed for a well-formed call rejected by the controller", () => {
+      const outcome = executeTool(
+        controller,
+        "play_sets",
+        JSON.stringify({ sets: [{ id: "s1", tiles: [{ id: "nope", color: "red", value: 1 }] }] })
+      );
+      expect(outcome.ok).toBe(false);
+      expect(outcome.malformed).toBeUndefined();
+    });
+
+    it("should NOT set malformed for a successful call", () => {
+      const outcome = executeTool(controller, "get_game_state", {});
+      expect(outcome.ok).toBe(true);
+      expect(outcome.malformed).toBeUndefined();
+    });
+  });
 });

@@ -102,6 +102,7 @@ The official Rummikub rules are maintained in [rules.md](rules.md) as the single
 | F-42 | AI opponents take turns server-side through the same authoritative game API as human players; AI behaviour is configured via environment variables (`AI_PROVIDER`, `AI_BASE_URL`, `AI_API_KEY`, `AI_DEFAULT_MODEL`) |
 | F-43 | The AI's system prompt, conversation history, tool calls/results, and errors are logged to the server console as JSON lines (correlated by `gameCode` + `playerId`) for inspection via `docker compose logs` |
 | F-44 | AI failures pause the game and surface the error to all players |
+| F-45 | The AI conversation is compacted (older exchanges folded into a summary) when it exceeds a configurable token budget, so long games do not blow the model's context window |
 
 #### 3.9.1 LLM agent design (`AI_PROVIDER=llm`)
 
@@ -112,8 +113,9 @@ When it is an AI player's turn, the server runs a **tool-calling agent loop** ag
 - **Error feedback loop**: every rejected move returns the same error message a human would see as a tool result, so the model can correct itself within the same turn — exactly like a human clicking around the UI.
 - **Turn protocol**: a turn must end with exactly one successful turn-ending tool (`draw_tile`, `end_turn` or `pass_turn`); the loop stops as soon as one succeeds.
 - **Persistent conversation**: each AI player keeps its own conversation (system prompt + history) per game and round; a turn-start user message with the turn number and a compact note of observable events since the AI's last turn (derived from state diffs, e.g. "Alice drew a tile") is appended before each turn. Conversations are reset on Play Again.
-- **Guardrails**: a hard cap of 50 tool-call iterations per turn; malformed tool calls and unknown tool names return readable error tool results; any SDK error or cap breach throws and pauses the game (`ai:error` + stuck banner). Missing `AI_API_KEY` fails fast at the AI's first turn with a clear log line.
-- **Logging**: JSON lines to stdout (`{ ts, gameCode, playerId, model, event, data }`) with events `system_prompt`, `request`, `response`, `tool_call`, `tool_result`, `turn_complete`, `error`; view with `docker compose logs -f dev-server`.
+- **Guardrails**: a hard cap of `AI_MAX_TOOL_ITERATIONS` (default 25) tool-call iterations per turn; malformed tool calls and unknown tool names return readable error tool results; two consecutive completions with only malformed calls pause the game. Transient API errors (429, 5xx, network, timeout) are retried with exponential backoff (`AI_MAX_RETRIES`, `AI_RETRY_BASE_MS`); auth and context-length errors pause immediately. Any SDK error or cap breach throws and pauses the game (`ai:error` + stuck banner). Missing `AI_API_KEY` fails fast at the AI's first turn with a clear log line.
+- **Compaction**: before each turn the conversation's token count is estimated (`Math.ceil(chars/4)`); if it exceeds `AI_CONTEXT_TOKEN_LIMIT` (default 100000), all but the last `AI_COMPACT_KEEP_TURNS` exchanges are replaced with a model-generated summary plus a fixed note telling the model that board state is authoritative via `get_game_state`. Summarization failure falls back to truncation (`compaction_fallback`) instead of pausing. Compaction is logged (`event: "compaction"` with before/after token estimates).
+- **Logging**: JSON lines to stdout (`{ ts, gameCode, playerId, model, event, data }`) with events `system_prompt`, `request`, `response`, `tool_call`, `tool_result`, `turn_complete`, `retry`, `compaction`, `compaction_fallback`, `error`; view with `docker compose logs -f dev-server`.
 
 ## 4. Non-Functional Requirements
 | ID | Requirement |
@@ -400,7 +402,7 @@ These features are explicitly deferred but should be considered in architecture 
 
 ### Phase 4: Future
 
-- [ ] AI opponent (in progress: infrastructure in Plan 011, LLM provider in Plan 012, robustness in Plan 013)
+- [x] AI opponent (delivered across plans 011-013: infrastructure, LLM provider, robustness)
 - [ ] Drag-and-drop tile placement
 - [ ] Chat
 - [ ] Valid move highlighting

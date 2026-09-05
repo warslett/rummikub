@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Server as SocketIOServer } from "socket.io";
 import { Game } from "../game.js";
-import { maybeRunNextTurn, resetTurnContext, _resetAiRunnerState } from "./runner.js";
+import { maybeRunNextTurn, resetTurnContext, resetAiErrors, _resetAiRunnerState } from "./runner.js";
 import * as providersModule from "./providers/index.js";
 import type { TurnContext } from "./providers/types.js";
 
@@ -127,6 +127,38 @@ describe("AiTurnRunner", () => {
     failingProvider.takeTurn.mockClear();
     await maybeRunNextTurn(io, game, "TEST01");
     expect(failingProvider.takeTurn).not.toHaveBeenCalled();
+
+    getProviderSpy.mockRestore();
+  });
+
+  it("should clear AI errors for a game on resetAiErrors", async () => {
+    game.addPlayer("p1", "Alice");
+    const ai = game.addAiPlayer("failing-model");
+    game.start();
+    game.seedGame({
+      board: [],
+      racks: { p1: [], [ai.id]: [] },
+      pool: [{ id: "red-1-a", color: "red", value: 1 }],
+      currentTurnPlayerId: ai.id,
+      hasInitialMeld: { p1: true, [ai.id]: true },
+    });
+
+    const failingProvider = {
+      takeTurn: vi.fn().mockRejectedValue(new Error("Model hallucinated invalid move")),
+    };
+    const getProviderSpy = vi.spyOn(providersModule, "getProvider").mockReturnValue(failingProvider);
+
+    await maybeRunNextTurn(io, game, "TEST01");
+    const errorEvent = io._emittedEvents.find((e) => e.event === "ai:error");
+    expect(errorEvent).toBeDefined();
+
+    failingProvider.takeTurn.mockClear();
+    await maybeRunNextTurn(io, game, "TEST01");
+    expect(failingProvider.takeTurn).not.toHaveBeenCalled();
+
+    resetAiErrors("TEST01");
+    await maybeRunNextTurn(io, game, "TEST01");
+    expect(failingProvider.takeTurn).toHaveBeenCalled();
 
     getProviderSpy.mockRestore();
   });

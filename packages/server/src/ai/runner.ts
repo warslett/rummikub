@@ -10,6 +10,10 @@ import type { TurnContext } from "./providers/types.js";
 const busyGames = new Set<string>();
 const aiErrors = new Map<string, string>();
 
+function aiErrorKey(gameCode: string, playerId: string): string {
+  return `${gameCode}:${playerId}`;
+}
+
 interface TurnObservation {
   boardTileCount: number;
   consecutivePasses: number;
@@ -85,7 +89,7 @@ export async function maybeRunNextTurn(
       if (!currentPlayer?.isAI) {
         break;
       }
-      if (aiErrors.has(currentPlayer.id)) {
+      if (aiErrors.has(aiErrorKey(gameCode, currentPlayer.id))) {
         break;
       }
 
@@ -108,7 +112,7 @@ export async function maybeRunNextTurn(
         await provider.takeTurn(controller, context);
       } catch (err) {
         const message = (err as Error).message || "Unknown AI error";
-        aiErrors.set(currentPlayer.id, message);
+        aiErrors.set(aiErrorKey(gameCode, currentPlayer.id), message);
         const payload: AiErrorPayload = {
           playerId: currentPlayer.id,
           playerName: currentPlayer.name,
@@ -122,7 +126,7 @@ export async function maybeRunNextTurn(
       const nextPlayer = game.getState().players[game.getState().currentTurnIndex];
       if (nextPlayer.id === currentPlayer.id && game.getState().phase === "playing") {
         const message = "AI completed turn without ending it or passing";
-        aiErrors.set(currentPlayer.id, message);
+        aiErrors.set(aiErrorKey(gameCode, currentPlayer.id), message);
         const payload: AiErrorPayload = {
           playerId: currentPlayer.id,
           playerName: currentPlayer.name,
@@ -140,6 +144,14 @@ export async function maybeRunNextTurn(
 
 export function resetTurnContext(gameCode: string): void {
   turnTracking.delete(gameCode);
+}
+
+export function resetAiErrors(gameCode: string): void {
+  for (const key of [...aiErrors.keys()]) {
+    if (key.startsWith(`${gameCode}:`)) {
+      aiErrors.delete(key);
+    }
+  }
 }
 
 export function _resetAiRunnerState(): void {

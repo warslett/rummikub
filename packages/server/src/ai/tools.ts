@@ -19,6 +19,7 @@ export interface ToolExecutionOutcome {
   error?: string;
   content: string;
   turnEnded: boolean;
+  malformed?: boolean;
 }
 
 const TILE_SCHEMA = {
@@ -195,6 +196,10 @@ function failure(error: string): ToolExecutionOutcome {
   return { ok: false, error, content: JSON.stringify({ ok: false, error }), turnEnded: false };
 }
 
+function malformedFailure(error: string): ToolExecutionOutcome {
+  return { ok: false, error, content: JSON.stringify({ ok: false, error }), turnEnded: false, malformed: true };
+}
+
 export function executeTool(
   controller: AiTurnController,
   name: string,
@@ -202,7 +207,7 @@ export function executeTool(
 ): ToolExecutionOutcome {
   const parsed = parseArgs(args);
   if (!parsed.ok) {
-    return failure(parsed.error);
+    return malformedFailure(parsed.error);
   }
   const argsRecord = parsed.args;
 
@@ -213,11 +218,11 @@ export function executeTool(
     case "play_sets": {
       const sets = getArrayArg(argsRecord, "sets");
       if (!sets.ok) {
-        return failure(sets.error);
+        return malformedFailure(sets.error);
       }
       const withIds = withGeneratedSetIds(sets.value);
       if (!withIds.ok) {
-        return failure(withIds.error);
+        return malformedFailure(withIds.error);
       }
       const result = controller.playSets(withIds.value);
       return result.ok ? success(result.state, "compact") : failure(result.error);
@@ -225,11 +230,11 @@ export function executeTool(
     case "manipulate_board": {
       const newBoard = getArrayArg(argsRecord, "newBoard");
       if (!newBoard.ok) {
-        return failure(newBoard.error);
+        return malformedFailure(newBoard.error);
       }
       const withIds = withGeneratedSetIds(newBoard.value);
       if (!withIds.ok) {
-        return failure(withIds.error);
+        return malformedFailure(withIds.error);
       }
       const result = controller.manipulateBoard(withIds.value);
       return result.ok ? success(result.state, "compact") : failure(result.error);
@@ -250,11 +255,11 @@ export function executeTool(
       if (argsRecord.newBoard !== undefined) {
         const parsedBoard = getArrayArg(argsRecord, "newBoard");
         if (!parsedBoard.ok) {
-          return failure(parsedBoard.error);
+          return malformedFailure(parsedBoard.error);
         }
         const withIds = withGeneratedSetIds(parsedBoard.value);
         if (!withIds.ok) {
-          return failure(withIds.error);
+          return malformedFailure(withIds.error);
         }
         newBoard = withIds.value;
       }
@@ -272,6 +277,6 @@ export function executeTool(
       return { ok: true, content: JSON.stringify({ ok: true, state: compactStateProjection(result.state) }), turnEnded: true };
     }
     default:
-      return failure(`Unknown tool: ${name}`);
+      return malformedFailure(`Unknown tool: ${name}`);
   }
 }

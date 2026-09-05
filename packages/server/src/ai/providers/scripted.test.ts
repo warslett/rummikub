@@ -155,6 +155,48 @@ describe("ScriptedProvider", () => {
 
     await expect(provider.takeTurn(controller)).rejects.toThrow("Cannot pass");
   });
+
+  it("should throw the seeded message when a fail action is reached", async () => {
+    game.start();
+    game.seedGame({
+      board: [],
+      racks: { p1: [], [aiPlayerId]: [] },
+      pool: [{ id: "red-5-a", color: "red" as const, value: 5 as const }],
+      currentTurnPlayerId: aiPlayerId,
+      hasInitialMeld: { p1: true, [aiPlayerId]: true },
+      aiScripts: {
+        [aiPlayerId]: [{ action: "fail", message: "Seeded failure" }],
+      },
+    });
+
+    const controller = new AiTurnController(io, game, "TEST01", aiPlayerId);
+    await expect(provider.takeTurn(controller)).rejects.toThrow("Seeded failure");
+  });
+
+  it("should execute script actions before a fail action throws", async () => {
+    game.start();
+    const r7 = { id: "red-7-a", color: "red" as const, value: 7 as const };
+    const r8 = { id: "red-8-a", color: "red" as const, value: 8 as const };
+    const r9 = { id: "red-9-a", color: "red" as const, value: 9 as const };
+    game.seedGame({
+      board: [],
+      racks: { p1: [], [aiPlayerId]: [r7, r8, r9] },
+      pool: [{ id: "blue-1-a", color: "blue" as const, value: 1 as const }],
+      currentTurnPlayerId: aiPlayerId,
+      hasInitialMeld: { p1: true, [aiPlayerId]: true },
+      aiScripts: {
+        [aiPlayerId]: [
+          { action: "playSets", sets: [{ id: "s1", tiles: [r7, r8, r9] }] },
+          { action: "fail", message: "Boom after playing" },
+        ],
+      },
+    });
+
+    const controller = new AiTurnController(io, game, "TEST01", aiPlayerId);
+    await expect(provider.takeTurn(controller)).rejects.toThrow("Boom after playing");
+
+    expect(game.getState().board).toHaveLength(1);
+  });
 });
 
 describe("providerFactory", () => {
