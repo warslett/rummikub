@@ -10,6 +10,8 @@ The dev server has no default `CMD` — you must provide the command explicitly:
 docker compose -f docker-compose.dev.yml run -d --name dev-server \
   -p 3000:3000 -p 5173:5173 \
   -e NODE_ENV=test \
+  -e AI_PROVIDER=scripted \
+  -e AI_DEFAULT_MODEL=test-model \
   dev \
   sh -c "npm run build --workspace=packages/shared && npm run build --workspace=packages/server && npx concurrently 'node --watch packages/server/dist/index.js' 'npx vite packages/client --host 0.0.0.0 --port 5173'"
 ```
@@ -22,6 +24,8 @@ docker compose -f docker-compose.dev.yml run -d --name dev-server \
 | `--name dev-server` | Allows easy cleanup: `docker rm -f dev-server` |
 | `-p 3000:3000 -p 5173:5173` | Publish both ports so the Playwright container can reach them on `localhost` |
 | `-e NODE_ENV=test` | Enables the `/test/seed` endpoint on the server. **Without this, all E2E tests that call `seedGame` will fail with 404.** |
+| `-e AI_PROVIDER=scripted` | Configures the server to use deterministic scripted AI provider for E2E tests |
+| `-e AI_DEFAULT_MODEL=test-model` | Sets default model name for AI player selection in tests |
 | `npm run build --workspace=packages/shared` | Must rebuild shared before server so the server picks up latest types |
 | `npm run build --workspace=packages/server` | Must build server TypeScript before `node --watch` can run it |
 | `npx vite packages/client --host 0.0.0.0` | The `--host 0.0.0.0` flag is **required** — without it Vite only listens on localhost inside the container |

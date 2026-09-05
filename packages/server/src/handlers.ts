@@ -4,6 +4,9 @@ import { MAX_PLAYERS } from "@rummikub/shared";
 import type { TileSet } from "@rummikub/shared";
 import type { SeedState } from "./game.js";
 import type { SpectatorGameState } from "@rummikub/shared";
+import { emitPlayerStates, emitGameEnded, emitStalemateEnded } from "./emissions.js";
+import { maybeRunNextTurn } from "./ai/runner.js";
+import { getModels } from "./ai/models.js";
 
 const manager = new GameManager();
 
@@ -33,7 +36,12 @@ export function registerHandlers(io: SocketIOServer): void {
       const gameUrl = `/game/${gameCode}`;
       socket.emit("game:created", { gameCode, gameUrl, playerId });
 
-      const players = game.getState().players.map((p) => ({ id: p.id, name: p.name }));
+      const players = game.getState().players.map((p) => ({
+        id: p.id,
+        name: p.name,
+        isAI: p.isAI ?? false,
+        model: p.model,
+      }));
       io.to(gameCode).emit("game:lobbyState", { players });
     });
 
@@ -59,7 +67,12 @@ export function registerHandlers(io: SocketIOServer): void {
 
       socket.emit("game:joined", { playerId });
 
-      const players = game.getState().players.map((p) => ({ id: p.id, name: p.name }));
+      const players = game.getState().players.map((p) => ({
+        id: p.id,
+        name: p.name,
+        isAI: p.isAI ?? false,
+        model: p.model,
+      }));
       io.to(gameCode).emit("game:lobbyState", { players });
     });
 
@@ -112,6 +125,8 @@ export function registerHandlers(io: SocketIOServer): void {
           }
         }
       }
+
+      maybeRunNextTurn(io, game, gc);
     });
 
     socket.on("turn:draw", () => {
@@ -135,6 +150,7 @@ export function registerHandlers(io: SocketIOServer): void {
       }
 
       emitPlayerStates(io, game, data.gameCode);
+      maybeRunNextTurn(io, game, data.gameCode);
     });
 
     socket.on("turn:play", ({ actions }: { actions: { sets: TileSet[] } }) => {
@@ -209,6 +225,7 @@ export function registerHandlers(io: SocketIOServer): void {
       }
 
       emitPlayerStates(io, game, data.gameCode);
+      maybeRunNextTurn(io, game, data.gameCode);
     });
 
     socket.on("turn:pass", () => {
@@ -227,31 +244,12 @@ export function registerHandlers(io: SocketIOServer): void {
 
       const state = game.getState();
       if (state.phase === "ended") {
-        const scores = game.calculateStalemateScores();
-        if (scores) {
-          game.applyScores(scores);
-          const players = state.players;
-          const stalemateWinner = players.find((p) => p.id === scores.winnerId);
-          if (stalemateWinner) stalemateWinner.gamesWon++;
-          const loserMap = new Map(scores.losers.map((l) => [l.id, l]));
-          io.to(data.gameCode).emit("game:ended", {
-            winnerId: scores.winnerId,
-            winnerName: scores.winnerName,
-            scores: players.map((p) => ({
-              playerId: p.id,
-              name: p.name,
-              score: p.id === scores.winnerId ? scores.winnerScore : (loserMap.get(p.id)?.penalty ?? 0),
-              rackValue: p.id === scores.winnerId ? 0 : game.getRackValue(p.id),
-            })),
-            roundNumber: state.roundNumber,
-            isStalemate: true,
-            gamesWon: players.map((p) => ({ playerId: p.id, gamesWon: p.gamesWon })),
-          });
-        }
+        emitStalemateEnded(io, game, data.gameCode);
         return;
       }
 
       emitPlayerStates(io, game, data.gameCode);
+      maybeRunNextTurn(io, game, data.gameCode);
     });
 
     socket.on("game:playAgain", () => {
@@ -269,6 +267,7 @@ export function registerHandlers(io: SocketIOServer): void {
       }
 
       emitPlayerStates(io, game, data.gameCode);
+      maybeRunNextTurn(io, game, data.gameCode);
     });
 
     socket.on("game:reconnect", ({ gameCode, playerId }: { gameCode: string; playerId: string }) => {
@@ -297,6 +296,69 @@ export function registerHandlers(io: SocketIOServer): void {
       emitPlayerStates(io, game, gameCode);
     });
 
+    socket.on("ai:add", (payload?: { model?: string }) => {
+      if (data.isSpectator) return;
+      if (!payload || typeof payload.model !== "string" || !payload.model.trim()) {
+        socket.emit("move:rejected", { reason: "Model is required" });
+        return;
+      }
+
+      const game = manager.getGame(data.gameCode);
+      if (!game) {
+        socket.emit("game:error", { message: "Game not found" });
+        return;
+      }
+
+      try {
+        game.addAiPlayer(payload.model.trim());
+      } catch (err) {
+        socket.emit("move:rejected", { reason: (err as Error).message });
+        return;
+      }
+
+      const players = game.getState().players.map((p) => ({
+        id: p.id,
+        name: p.name,
+        isAI: p.isAI ?? false,
+        model: p.model,
+      }));
+      io.to(data.gameCode).emit("game:lobbyState", { players });
+    });
+
+    socket.on("ai:remove", (payload?: { playerId?: string }) => {
+      if (data.isSpectator) return;
+      if (!payload || typeof payload.playerId !== "string" || !payload.playerId.trim()) {
+        socket.emit("move:rejected", { reason: "Player ID is required" });
+        return;
+      }
+
+      const game = manager.getGame(data.gameCode);
+      if (!game) {
+        socket.emit("game:error", { message: "Game not found" });
+        return;
+      }
+
+      try {
+        game.removeAiPlayer(payload.playerId.trim());
+      } catch (err) {
+        socket.emit("move:rejected", { reason: (err as Error).message });
+        return;
+      }
+
+      const players = game.getState().players.map((p) => ({
+        id: p.id,
+        name: p.name,
+        isAI: p.isAI ?? false,
+        model: p.model,
+      }));
+      io.to(data.gameCode).emit("game:lobbyState", { players });
+    });
+
+    socket.on("ai:getModels", async () => {
+      const models = await getModels();
+      socket.emit("ai:models", models);
+    });
+
     if (process.env.NODE_ENV === "test") {
       socket.on("game:seed", ({ gameCode, state }: { gameCode: string; state: SeedState }) => {
         const game = manager.getGame(gameCode);
@@ -313,6 +375,7 @@ export function registerHandlers(io: SocketIOServer): void {
         }
 
         emitPlayerStates(io, game, gameCode);
+        maybeRunNextTurn(io, game, gameCode);
       });
     }
 
@@ -335,56 +398,6 @@ export function registerHandlers(io: SocketIOServer): void {
       }
     });
   });
-}
-
-function emitPlayerStates(io: SocketIOServer, game: ReturnType<GameManager["getGame"]>, gameCode: string): void {
-  if (!game) return;
-  for (const player of game.getState().players) {
-    const sockets = io.sockets.adapter.rooms.get(gameCode);
-    if (!sockets) continue;
-    for (const socketId of sockets) {
-      const s = io.sockets.sockets.get(socketId);
-      if (s && (s.data as SocketData).playerId === player.id) {
-        s.emit("game:state", { gameState: game.getPlayerState(player.id) });
-      }
-    }
-  }
-
-  const roomSockets = io.sockets.adapter.rooms.get(gameCode);
-  if (roomSockets) {
-    const spectatorState = game.getSpectatorState();
-    for (const socketId of roomSockets) {
-      const s = io.sockets.sockets.get(socketId);
-      if (s && (s.data as SocketData).isSpectator) {
-        s.emit("game:state", { gameState: spectatorState });
-      }
-    }
-  }
-}
-
-function emitGameEnded(io: SocketIOServer, game: ReturnType<GameManager["getGame"]>, gameCode: string, endResult: { winnerId: string; winnerName: string }): void {
-  if (!game) return;
-  const scores = game.calculateScores();
-  const state = game.getState();
-  if (scores) {
-    game.applyScores(scores);
-    const winner = state.players.find((p) => p.id === endResult.winnerId);
-    if (winner) winner.gamesWon++;
-    const loserMap = new Map(scores.losers.map((l) => [l.id, l]));
-    io.to(gameCode).emit("game:ended", {
-      winnerId: endResult.winnerId,
-      winnerName: endResult.winnerName,
-      scores: state.players.map((p) => ({
-        playerId: p.id,
-        name: p.name,
-        score: p.id === endResult.winnerId ? scores.winnerScore : (loserMap.get(p.id)?.penalty ?? 0),
-        rackValue: p.id === endResult.winnerId ? 0 : game.getRackValue(p.id),
-      })),
-      roundNumber: state.roundNumber,
-      isStalemate: false,
-      gamesWon: state.players.map((p) => ({ playerId: p.id, gamesWon: p.gamesWon })),
-    });
-  }
 }
 
 export { manager };

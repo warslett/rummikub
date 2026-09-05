@@ -147,14 +147,25 @@ export function OpponentInfo({
   name,
   rackSize,
   disconnected,
+  isAI,
+  model,
 }: {
   name: string;
   rackSize: number;
   disconnected?: boolean;
+  isAI?: boolean;
+  model?: string;
 }) {
   return (
     <div className="flex items-center gap-3 px-3 py-2 bg-[#1C1C1C] rounded-lg border border-[#333333]">
-      <span className={`text-sm ${disconnected ? "text-red-400" : "text-gray-400"}`}>{name}</span>
+      <div className="flex items-center gap-2">
+        <span className={`text-sm ${disconnected ? "text-red-400" : "text-gray-400"}`}>{name}</span>
+        {isAI && (
+          <span className="px-1.5 py-0.5 text-xs bg-indigo-700 text-indigo-100 rounded font-semibold">
+            {model ? `AI · ${model}` : "AI"}
+          </span>
+        )}
+      </div>
       <span className="text-gray-500">|</span>
       <span className="text-gray-400 text-sm">{rackSize} tiles</span>
       {disconnected && <span className="text-red-400 text-xs">(disconnected)</span>}
@@ -164,6 +175,7 @@ export function OpponentInfo({
 
 export function Controls({
   isYourTurn,
+  isAiTurn,
   selectedCount,
   hasPlayedThisTurn,
   hasChanges,
@@ -176,6 +188,7 @@ export function Controls({
   allOpponentsDisconnected,
 }: {
   isYourTurn: boolean;
+  isAiTurn?: boolean;
   selectedCount: number;
   hasPlayedThisTurn: boolean;
   hasChanges: boolean;
@@ -188,7 +201,11 @@ export function Controls({
   allOpponentsDisconnected?: boolean;
 }) {
   if (!isYourTurn) {
-    return <div className="text-center text-gray-500 py-2">Waiting for other players...</div>;
+    return (
+      <div className="text-center text-gray-500 py-2">
+        {isAiTurn ? "AI is thinking..." : "Waiting for other players..."}
+      </div>
+    );
   }
   return (
     <div className="flex gap-3 justify-center py-2 flex-wrap">

@@ -2,7 +2,6 @@ import {
   INITIAL_HAND_SIZE,
   INITIAL_MELD_MINIMUM,
   calculateSetValue,
-  resolveJokerValue,
   generateAllTiles,
   shuffleTiles,
   sortSetTiles,
@@ -13,7 +12,7 @@ import {
   getSetValidationError,
   getBoardValidationErrors,
 } from "@rummikub/shared";
-import type { TileSet, Tile, Player, GameState, GamePhase, PlayerGameState, SpectatorGameState, OpponentInfo } from "@rummikub/shared";
+import type { TileSet, Tile, Player, GameState, GamePhase, PlayerGameState, SpectatorGameState, OpponentInfo, AiScriptAction } from "@rummikub/shared";
 
 function isJoker(tile: Tile): boolean {
   return tile.color === JOKER_COLOR;
@@ -36,6 +35,7 @@ export interface SeedState {
   pool: Tile[];
   currentTurnPlayerId: string;
   hasInitialMeld: Record<string, boolean>;
+  aiScripts?: Record<string, AiScriptAction[]>;
 }
 
 export class Game {
@@ -77,6 +77,44 @@ export class Game {
       connected: true,
       gamesWon: 0,
     });
+  }
+
+  addAiPlayer(model: string): Player {
+    if (this.state.phase !== "lobby") {
+      throw new Error("Cannot add players after game has started");
+    }
+    if (this.state.players.length >= MAX_PLAYERS) {
+      throw new Error("Game is full");
+    }
+    const playerId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const aiPlayer: Player = {
+      id: playerId,
+      name: `AI: ${model}`,
+      rack: [],
+      hasInitialMeld: false,
+      score: 0,
+      connected: true,
+      gamesWon: 0,
+      isAI: true,
+      model,
+    };
+    this.state.players.push(aiPlayer);
+    return aiPlayer;
+  }
+
+  removeAiPlayer(playerId: string): void {
+    if (this.state.phase !== "lobby") {
+      throw new Error("Cannot remove AI player after game has started");
+    }
+    const index = this.state.players.findIndex((p) => p.id === playerId);
+    if (index === -1) {
+      throw new Error("Player not found");
+    }
+    const player = this.state.players[index];
+    if (!player.isAI) {
+      throw new Error("Cannot remove human player");
+    }
+    this.state.players.splice(index, 1);
   }
 
   start(): void {
@@ -409,8 +447,6 @@ export class Game {
       throw new Error("Can only start new round after game has ended");
     }
 
-    const preservedScores = this.state.players.map((p) => ({ id: p.id, score: p.score, gamesWon: p.gamesWon }));
-
     const allTiles = shuffleTiles(generateAllTiles());
     let index = 0;
 
@@ -432,6 +468,9 @@ export class Game {
 
   reconnectPlayer(playerId: string): void {
     const player = this.getPlayer(playerId);
+    if (player.isAI) {
+      throw new Error("Cannot reconnect AI player");
+    }
     player.connected = true;
   }
 
@@ -442,6 +481,9 @@ export class Game {
     this.state.turnActions = [];
     this.state.turnSnapshot = null;
     this.state.consecutivePasses = 0;
+    if (seed.aiScripts) {
+      this.state.seededScripts = deepClone(seed.aiScripts);
+    }
 
     for (const player of this.state.players) {
       player.rack = deepClone(seed.racks[player.id] ?? []);
@@ -471,6 +513,8 @@ export class Game {
         score: p.score,
         gamesWon: p.gamesWon,
         connected: p.connected,
+        isAI: p.isAI ?? false,
+        model: p.model,
       }));
 
     return {
@@ -508,6 +552,8 @@ export class Game {
         score: p.score,
         gamesWon: p.gamesWon,
         connected: p.connected,
+        isAI: p.isAI ?? false,
+        model: p.model,
       })),
       roundNumber: this.state.roundNumber,
       consecutivePasses: this.state.consecutivePasses,

@@ -1,0 +1,199 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Server as SocketIOServer } from "socket.io";
+import { registerHandlers, manager } from "./handlers.js";
+import * as runnerModule from "./ai/runner.js";
+import type { GameLobbyStatePayload, AiModelsPayload } from "@rummikub/shared";
+
+interface MockSocket {
+  id: string;
+  data: Record<string, unknown>;
+  callbacks: Record<string, (data?: unknown) => void | Promise<void>>;
+  emitted: { event: string; data: unknown }[];
+  on(event: string, cb: (data?: unknown) => void | Promise<void>): void;
+  emit(event: string, data: unknown): void;
+  join(room: string): void;
+  to(room: string): { emit: (event: string, data: unknown) => void };
+}
+
+function createMockSocket(id = "s1"): MockSocket {
+  const callbacks: Record<string, (data?: unknown) => void | Promise<void>> = {};
+  const emitted: { event: string; data: unknown }[] = [];
+  return {
+    id,
+    data: {},
+    callbacks,
+    emitted,
+    on(event: string, cb: (data?: unknown) => void | Promise<void>) {
+      callbacks[event] = cb;
+    },
+    emit(event: string, data: unknown) {
+      emitted.push({ event, data });
+    },
+    join: vi.fn(),
+    to: vi.fn().mockReturnValue({ emit: vi.fn() }),
+  };
+}
+
+function createMockIo() {
+  let connectionCallback: ((socket: MockSocket) => void) | null = null;
+  const emittedRoom: { room: string; event: string; data: unknown }[] = [];
+  const socketsMap = new Map<string, MockSocket>();
+  const roomsMap = new Map<string, Set<string>>();
+
+  const io = {
+    on(event: string, cb: (socket: MockSocket) => void) {
+      if (event === "connection") {
+        connectionCallback = cb;
+      }
+    },
+    to(room: string) {
+      return {
+        emit(event: string, data: unknown) {
+          emittedRoom.push({ room, event, data });
+        },
+      };
+    },
+    sockets: {
+      adapter: {
+        rooms: roomsMap,
+      },
+      sockets: socketsMap,
+    },
+    _connect(socket: MockSocket) {
+      socketsMap.set(socket.id, socket);
+      connectionCallback?.(socket);
+    },
+    _emittedRoom: emittedRoom,
+  };
+
+  return io as unknown as SocketIOServer & {
+    _connect: (s: MockSocket) => void;
+    _emittedRoom: { room: string; event: string; data: unknown }[];
+  };
+}
+
+describe("Socket Handlers AI Integration", () => {
+  let io: ReturnType<typeof createMockIo>;
+  let socket: MockSocket;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    io = createMockIo();
+    registerHandlers(io as unknown as SocketIOServer);
+    socket = createMockSocket("sock-1");
+    io._connect(socket);
+  });
+
+  it("should handle ai:add and broadcast lobbyState with AI player", () => {
+    socket.callbacks["game:create"]({ playerName: "Alice" });
+    const createEvt = socket.emitted.find((e) => e.event === "game:created");
+    const gameCode = (createEvt?.data as { gameCode: string }).gameCode;
+
+    socket.callbacks["ai:add"]({ model: "gpt-4" });
+
+    const lobbyEvts = io._emittedRoom.filter(
+      (e) => e.room === gameCode && e.event === "game:lobbyState"
+    );
+    const lastLobby = lobbyEvts[lobbyEvts.length - 1]?.data as GameLobbyStatePayload;
+    expect(lastLobby.players).toHaveLength(2);
+    expect(lastLobby.players[1].isAI).toBe(true);
+    expect(lastLobby.players[1].name).toBe("AI: gpt-4");
+  });
+
+  it("should reject ai:add if lobby is full", () => {
+    socket.callbacks["game:create"]({ playerName: "Alice" });
+    socket.callbacks["ai:add"]({ model: "m1" });
+    socket.callbacks["ai:add"]({ model: "m2" });
+    socket.callbacks["ai:add"]({ model: "m3" });
+    socket.callbacks["ai:add"]({ model: "m4" }); // 5th player
+
+    const rejectEvt = socket.emitted.find(
+      (e) => e.event === "move:rejected" && (e.data as { reason: string }).reason.includes("full")
+    );
+    expect(rejectEvt).toBeDefined();
+  });
+
+  it("should handle ai:remove and broadcast updated lobbyState", () => {
+    socket.callbacks["game:create"]({ playerName: "Alice" });
+    const createEvt = socket.emitted.find((e) => e.event === "game:created");
+    const gameCode = (createEvt?.data as { gameCode: string }).gameCode;
+
+    socket.callbacks["ai:add"]({ model: "gpt-4" });
+    const game = manager.getGame(gameCode)!;
+    const aiPlayer = game.getState().players.find((p) => p.isAI)!;
+
+    socket.callbacks["ai:remove"]({ playerId: aiPlayer.id });
+
+    const lobbyEvts = io._emittedRoom.filter(
+      (e) => e.room === gameCode && e.event === "game:lobbyState"
+    );
+    const lastLobby = lobbyEvts[lobbyEvts.length - 1]?.data as GameLobbyStatePayload;
+    expect(lastLobby.players).toHaveLength(1);
+    expect(lastLobby.players.some((p) => p.id === aiPlayer.id)).toBe(false);
+  });
+
+  it("should handle ai:getModels and emit ai:models to requesting socket", async () => {
+    await socket.callbacks["ai:getModels"]();
+
+    const modelsEvt = socket.emitted.find((e) => e.event === "ai:models");
+    expect(modelsEvt).toBeDefined();
+    const data = modelsEvt?.data as AiModelsPayload;
+    expect(data.models).toBeDefined();
+    expect(data.defaultModel).toBeDefined();
+  });
+
+  it("should call maybeRunNextTurn on game:start", () => {
+    const runnerSpy = vi.spyOn(runnerModule, "maybeRunNextTurn").mockResolvedValue();
+    socket.callbacks["game:create"]({ playerName: "Alice" });
+    const createEvt = socket.emitted.find((e) => e.event === "game:created");
+    const gameCode = (createEvt?.data as { gameCode: string }).gameCode;
+
+    socket.callbacks["ai:add"]({ model: "test-model" });
+    socket.callbacks["game:start"]({ gameCode });
+
+    expect(runnerSpy).toHaveBeenCalled();
+  });
+
+  it("should reject ai:add if model is missing or invalid", () => {
+    socket.callbacks["game:create"]({ playerName: "Alice" });
+    socket.callbacks["ai:add"](undefined as unknown as { model: string });
+
+    const rejectEvt = socket.emitted.find(
+      (e) => e.event === "move:rejected" && (e.data as { reason: string }).reason.includes("Model is required")
+    );
+    expect(rejectEvt).toBeDefined();
+
+    socket.callbacks["ai:add"]({ model: "   " });
+    const rejectEvt2 = socket.emitted.filter(
+      (e) => e.event === "move:rejected" && (e.data as { reason: string }).reason.includes("Model is required")
+    );
+    expect(rejectEvt2).toHaveLength(2);
+  });
+
+  it("should reject ai:remove if playerId is missing or invalid", () => {
+    socket.callbacks["game:create"]({ playerName: "Alice" });
+    socket.callbacks["ai:remove"](undefined as unknown as { playerId: string });
+
+    const rejectEvt = socket.emitted.find(
+      (e) => e.event === "move:rejected" && (e.data as { reason: string }).reason.includes("Player ID is required")
+    );
+    expect(rejectEvt).toBeDefined();
+
+    socket.callbacks["ai:remove"]({ playerId: "   " });
+    const rejectEvt2 = socket.emitted.filter(
+      (e) => e.event === "move:rejected" && (e.data as { reason: string }).reason.includes("Player ID is required")
+    );
+    expect(rejectEvt2).toHaveLength(2);
+  });
+
+  it("should ignore ai:add and ai:remove from spectator", () => {
+    socket.callbacks["game:create"]({ playerName: "Alice" });
+    socket.data.isSpectator = true;
+
+    socket.callbacks["ai:add"]({ model: "gpt-4" });
+    socket.callbacks["ai:remove"]({ playerId: "some-id" });
+
+    const rejectEvt = socket.emitted.find((e) => e.event === "move:rejected");
+    expect(rejectEvt).toBeUndefined();
+  });
+});

@@ -21,6 +21,8 @@ export interface Player {
   score: number;
   connected: boolean;
   gamesWon: number;
+  isAI?: boolean;
+  model?: string;
 }
 
 export type GamePhase = "lobby" | "playing" | "ended";
@@ -43,6 +45,7 @@ export interface GameState {
   consecutivePasses: number;
   createdAt: number;
   lastActivityAt: number;
+  seededScripts?: Record<string, AiScriptAction[]>;
 }
 
 export type TurnAction =
@@ -58,6 +61,8 @@ export interface OpponentInfo {
   score: number;
   gamesWon: number;
   connected: boolean;
+  isAI: boolean;
+  model?: string;
 }
 
 export interface PlayerGameState {
@@ -90,7 +95,7 @@ export interface GameJoinedPayload {
 }
 
 export interface GameLobbyStatePayload {
-  players: { id: string; name: string }[];
+  players: { id: string; name: string; isAI: boolean; model?: string }[];
 }
 
 export interface GameStartedPayload {
@@ -139,7 +144,7 @@ export interface SpectatorGameState {
   board: TileSet[];
   poolSize: number;
   currentTurnPlayerId: string;
-  players: { id: string; name: string; score: number; gamesWon: number; connected: boolean }[];
+  players: { id: string; name: string; score: number; gamesWon: number; connected: boolean; isAI: boolean; model?: string }[];
   roundNumber: number;
   consecutivePasses: number;
 }
@@ -147,3 +152,22 @@ export interface SpectatorGameState {
 export interface SpectatorJoinedPayload {
   gameState: SpectatorGameState;
 }
+
+export interface AiModelsPayload {
+  models: string[];
+  defaultModel: string;
+}
+
+export interface AiErrorPayload {
+  playerId: string;
+  playerName: string;
+  message: string;
+}
+
+export type AiScriptAction =
+  | { action: "playSets"; sets: TileSet[] }
+  | { action: "manipulateBoard"; newBoard: TileSet[] }
+  | { action: "drawTile" }
+  | { action: "undoTurn" }
+  | { action: "endTurn"; newBoard?: TileSet[] }
+  | { action: "passTurn" };
