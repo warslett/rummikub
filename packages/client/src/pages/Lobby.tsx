@@ -7,10 +7,32 @@ import { MAX_PLAYERS } from "@rummikub/shared";
 export function Lobby() {
   const { gameCode } = useParams<{ gameCode: string }>();
   const navigate = useNavigate();
-  const { playerId, setPlayerId, setGameState, gameCode: contextGameCode, setGameCode, lobbyPlayers } = useGame();
+  const { playerId, setPlayerId, setGameState, gameCode: contextGameCode, setGameCode, lobbyPlayers, aiModels } = useGame();
   const [playerName, setPlayerName] = useState("");
   const [hasJoined, setHasJoined] = useState(playerId !== null && contextGameCode === gameCode);
   const [copied, setCopied] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<string>("");
+
+  const effectiveDefaultModel = aiModels
+    ? aiModels.models.includes(aiModels.defaultModel)
+      ? aiModels.defaultModel
+      : aiModels.models[0] || aiModels.defaultModel
+    : "";
+
+  useEffect(() => {
+    if (aiModels && !selectedModel) {
+      const initial = aiModels.models.includes(aiModels.defaultModel)
+        ? aiModels.defaultModel
+        : aiModels.models[0] || aiModels.defaultModel;
+      setSelectedModel(initial);
+    }
+  }, [aiModels, selectedModel]);
+
+  useEffect(() => {
+    if (hasJoined) {
+      socket.emit("ai:getModels");
+    }
+  }, [hasJoined]);
 
   useEffect(() => {
     if (gameCode) {
@@ -54,9 +76,19 @@ export function Lobby() {
     socket.emit("game:start", { gameCode });
   }
 
+  function handleAddAi() {
+    const model = selectedModel || effectiveDefaultModel || "scripted-default";
+    socket.emit("ai:add", { model });
+  }
+
+  function handleRemoveAi(pId: string) {
+    socket.emit("ai:remove", { playerId: pId });
+  }
+
   const otherPlayers = lobbyPlayers.filter((p) => p.id !== playerId);
   const totalPlayers = lobbyPlayers.length;
-  const gameUrl = gameCode ? `${window.location.origin}/lobby/${gameCode}` : "";
+  const origin = typeof window !== "undefined" && window.location ? window.location.origin : "";
+  const gameUrl = gameCode && origin ? `${origin}/lobby/${gameCode}` : "";
 
   const handleCopy = useCallback(() => {
     if (!gameUrl) return;
@@ -139,16 +171,60 @@ export function Lobby() {
         <div className="text-center text-gray-400 text-sm">
           {totalPlayers}/{MAX_PLAYERS} players
         </div>
-        <div className="border-t border-gray-600 pt-4 space-y-2">
-          {otherPlayers.length === 0 ? (
-            <p className="text-sm text-gray-300">Waiting for other players...</p>
-          ) : (
-            <div className="space-y-1">
-              {otherPlayers.map((p) => (
-                <p key={p.id} className="text-sm text-gray-300">{p.name}</p>
+
+        <div className="border-t border-gray-600 pt-4 space-y-3">
+          <div className="flex gap-2 items-center">
+            <select
+              value={selectedModel || effectiveDefaultModel || ""}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              disabled={totalPlayers >= MAX_PLAYERS}
+              className="flex-1 px-2.5 py-1.5 bg-gray-700 rounded border border-gray-600 text-sm text-white focus:outline-none disabled:opacity-50"
+            >
+              {(aiModels?.models ?? (aiModels?.defaultModel ? [aiModels.defaultModel] : ["scripted-default"])).map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
               ))}
-            </div>
-          )}
+            </select>
+            <button
+              onClick={handleAddAi}
+              disabled={totalPlayers >= MAX_PLAYERS}
+              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm font-semibold"
+            >
+              Add AI Player
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            {otherPlayers.length === 0 ? (
+              <p className="text-sm text-gray-300">Waiting for other players...</p>
+            ) : (
+              <div className="space-y-1">
+                {otherPlayers.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between py-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-300">{p.name}</span>
+                      {p.isAI && (
+                        <span className="px-1.5 py-0.5 text-xs bg-indigo-700 text-indigo-100 rounded font-semibold">
+                          AI
+                        </span>
+                      )}
+                    </div>
+                    {p.isAI && (
+                      <button
+                        onClick={() => handleRemoveAi(p.id)}
+                        className="text-gray-400 hover:text-red-400 text-base font-bold px-1"
+                        title="Remove AI player"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {totalPlayers >= 2 && (
             <button
               onClick={handleStart}

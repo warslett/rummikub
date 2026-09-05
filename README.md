@@ -67,6 +67,15 @@ packages/qa/       — End-to-end tests (Playwright)
 docs/              — Project documentation
 ```
 
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AI_PROVIDER` | `scripted` | AI turn provider (`scripted` or future `llm`) |
+| `AI_BASE_URL` | `https://opencode.ai/zen/v1` | Base URL for OpenAI-compatible model endpoints |
+| `AI_API_KEY` | (empty) | API key for the AI gateway |
+| `AI_DEFAULT_MODEL` | `scripted-default` | Default model name pre-selected in the lobby |
+
 ## Documentation
 
 | File | Contents |

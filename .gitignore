@@ -4,6 +4,7 @@ dist/
 *.log
 .DS_Store
 test-results/
+playwright-report/
 .idea/
 .agents/codereview/
 .workspace

@@ -43,7 +43,7 @@ function generateSetId(): string {
 }
 
 export function GameBoard() {
-  const { gameState, playerId } = useGame();
+  const { gameState, playerId, aiError } = useGame();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [workingBoard, setWorkingBoard] = useState<TileSet[] | null>(null);
   const [workingRack, setWorkingRack] = useState<Tile[] | null>(null);
@@ -90,6 +90,8 @@ export function GameBoard() {
 
   const anyOpponentDisconnected = gameState ? gameState.opponents.some((o) => !o.connected) : false;
   const allOpponentsDisconnected = gameState ? gameState.opponents.length > 0 && gameState.opponents.every((o) => !o.connected) : false;
+  const currentOpponent = gameState ? gameState.opponents.find((o) => o.id === gameState.currentTurnPlayerId) : null;
+  const isAiTurn = currentOpponent?.isAI ?? false;
 
   if (!gameState || !playerId) return null;
 
@@ -366,6 +368,12 @@ export function GameBoard() {
 
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-4">
+      {aiError && (
+        <div className="bg-red-700 text-white text-center py-2 px-4 rounded font-bold">
+          {`AI player stuck: ${aiError.playerName} — ${aiError.message}. Restart the server to recover.`}
+        </div>
+      )}
+
       {anyOpponentDisconnected && (
         <div className="bg-yellow-600 text-white text-center py-2 rounded font-bold">
           Player disconnected — waiting for reconnection...
@@ -380,6 +388,8 @@ export function GameBoard() {
               name={opp.name}
               rackSize={opp.rackSize}
               disconnected={!opp.connected}
+              isAI={opp.isAI}
+              model={opp.model}
             />
           ))}
         </div>
@@ -418,6 +428,7 @@ export function GameBoard() {
 
       <Controls
         isYourTurn={isYourTurn}
+        isAiTurn={isAiTurn}
         selectedCount={selectedIds.size}
         hasPlayedThisTurn={hasPlayedThisTurn}
         hasChanges={hasChanges}

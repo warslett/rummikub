@@ -56,6 +56,20 @@ export interface SeedState {
   pool: { id: string; color: string; value: number }[];
   currentTurnPlayerId: string;
   hasInitialMeld: Record<string, boolean>;
+  aiScripts?: Record<string, unknown[]>;
+}
+
+export async function addAiPlayer(page: Page, model?: string): Promise<void> {
+  if (model) {
+    await page.locator("select").selectOption(model);
+  }
+  await page.getByRole("button", { name: "Add AI Player" }).click();
+}
+
+export async function startGameWithAi(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Start Game" }).click();
+  await page.waitForURL(/\/game\//);
+  await expect(page.getByText(/Pool:/)).toBeVisible();
 }
 
 export async function seedGame(gameCode: string, state: SeedState): Promise<void> {

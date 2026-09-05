@@ -1377,4 +1377,115 @@ describe("Game", () => {
       expect(state.players).toHaveLength(3);
     });
   });
+
+  describe("AI Player Support", () => {
+    it("should add an AI player with correct attributes", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      const aiPlayer = fresh.addAiPlayer("gpt-4");
+
+      expect(aiPlayer.id).toMatch(/^ai-\d+-[a-z0-9]+$/);
+      expect(aiPlayer.name).toBe("AI: gpt-4");
+      expect(aiPlayer.isAI).toBe(true);
+      expect(aiPlayer.model).toBe("gpt-4");
+      expect(aiPlayer.connected).toBe(true);
+      expect(aiPlayer.score).toBe(0);
+      expect(aiPlayer.gamesWon).toBe(0);
+      expect(fresh.getState().players).toHaveLength(2);
+    });
+
+    it("should reject adding AI player when game is full", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.addPlayer("p3", "Charlie");
+      fresh.addPlayer("p4", "Diana");
+      expect(() => fresh.addAiPlayer("gpt-4")).toThrow();
+    });
+
+    it("should reject adding AI player when not in lobby phase", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.start();
+      expect(() => fresh.addAiPlayer("gpt-4")).toThrow();
+    });
+
+    it("should remove an AI player", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      const ai = fresh.addAiPlayer("gpt-4");
+      expect(fresh.getState().players).toHaveLength(2);
+
+      fresh.removeAiPlayer(ai.id);
+      expect(fresh.getState().players).toHaveLength(1);
+      expect(fresh.getState().players.some((p) => p.id === ai.id)).toBe(false);
+    });
+
+    it("should reject removing a human player with removeAiPlayer", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      expect(() => fresh.removeAiPlayer("p1")).toThrow();
+    });
+
+    it("should reject removing AI player when not in lobby phase", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      const ai = fresh.addAiPlayer("gpt-4");
+      fresh.start();
+      expect(() => fresh.removeAiPlayer(ai.id)).toThrow();
+    });
+
+    it("should populate isAI and model in getPlayerState opponents", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addAiPlayer("claude-3");
+      fresh.start();
+
+      const p1State = fresh.getPlayerState("p1");
+      expect(p1State.opponents).toHaveLength(1);
+      expect(p1State.opponents[0].isAI).toBe(true);
+      expect(p1State.opponents[0].model).toBe("claude-3");
+    });
+
+    it("should populate isAI and model in getSpectatorState players", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addAiPlayer("claude-3");
+      fresh.start();
+
+      const spectatorState = fresh.getSpectatorState();
+      expect(spectatorState.players).toHaveLength(2);
+      expect(spectatorState.players[0].isAI).toBe(false);
+      expect(spectatorState.players[1].isAI).toBe(true);
+      expect(spectatorState.players[1].model).toBe("claude-3");
+    });
+
+    it("should reject reconnectPlayer for AI player", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      const ai = fresh.addAiPlayer("claude-3");
+      fresh.start();
+      expect(() => fresh.reconnectPlayer(ai.id)).toThrow();
+    });
+
+    it("should store aiScripts in seedGame", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      const ai = fresh.addAiPlayer("claude-3");
+      fresh.seedGame({
+        board: [],
+        racks: { p1: [], [ai.id]: [] },
+        pool: [],
+        currentTurnPlayerId: ai.id,
+        hasInitialMeld: { p1: true, [ai.id]: true },
+        aiScripts: {
+          [ai.id]: [{ action: "drawTile" }],
+        },
+      });
+
+      expect(fresh.getState().seededScripts).toBeDefined();
+      expect(fresh.getState().seededScripts?.[ai.id]).toEqual([{ action: "drawTile" }]);
+    });
+  });
 });

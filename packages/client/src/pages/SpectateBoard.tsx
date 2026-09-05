@@ -27,7 +27,14 @@ export function SpectateBoard() {
         <div className="flex gap-4">
           {players.map((p) => (
             <div key={p.id} className="flex items-center gap-3 px-3 py-2 bg-gray-800 rounded-lg">
-              <span className={`text-sm ${!p.connected ? "text-red-400" : "text-gray-400"}`}>{p.name}</span>
+              <div className="flex items-center gap-2">
+                <span className={`text-sm ${!p.connected ? "text-red-400" : "text-gray-400"}`}>{p.name}</span>
+                {p.isAI && (
+                  <span className="px-1.5 py-0.5 text-xs bg-indigo-700 text-indigo-100 rounded font-semibold">
+                    {p.model ? `AI · ${p.model}` : "AI"}
+                  </span>
+                )}
+              </div>
               {!p.connected && <span className="text-red-400 text-xs">(disconnected)</span>}
             </div>
           ))}

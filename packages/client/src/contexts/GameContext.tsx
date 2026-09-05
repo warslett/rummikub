@@ -1,9 +1,11 @@
 import { createContext, useContext } from "react";
-import type { PlayerGameState, SpectatorGameState } from "@rummikub/shared";
+import type { PlayerGameState, SpectatorGameState, AiModelsPayload, AiErrorPayload } from "@rummikub/shared";
 
-interface LobbyPlayer {
+export interface LobbyPlayer {
   id: string;
   name: string;
+  isAI: boolean;
+  model?: string;
 }
 
 interface GameContextValue {
@@ -21,6 +23,10 @@ interface GameContextValue {
   setSpectatorState: (state: SpectatorGameState | null) => void;
   lobbyPlayers: LobbyPlayer[];
   setLobbyPlayers: (players: LobbyPlayer[]) => void;
+  aiModels: AiModelsPayload | null;
+  setAiModels: (models: AiModelsPayload | null) => void;
+  aiError: AiErrorPayload | null;
+  setAiError: (error: AiErrorPayload | null) => void;
 }
 
 export const GameContext = createContext<GameContextValue>({
@@ -38,6 +44,10 @@ export const GameContext = createContext<GameContextValue>({
   setSpectatorState: () => {},
   lobbyPlayers: [],
   setLobbyPlayers: () => {},
+  aiModels: null,
+  setAiModels: () => {},
+  aiError: null,
+  setAiError: () => {},
 });
 
 export function useGame() {

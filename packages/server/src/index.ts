@@ -2,6 +2,8 @@ import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { registerHandlers, manager } from "./handlers.js";
+import { emitPlayerStates } from "./emissions.js";
+import { maybeRunNextTurn } from "./ai/runner.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -16,6 +18,15 @@ app.get("/health", (_req, res) => {
 });
 
 if (process.env.NODE_ENV === "test") {
+  app.get("/test/game/:gameCode", (req, res) => {
+    const game = manager.getGame(req.params.gameCode);
+    if (!game) {
+      res.status(404).json({ error: "Game not found" });
+      return;
+    }
+    res.json(game.getState());
+  });
+
   app.post("/test/seed", (req, res) => {
     const { gameCode, state } = req.body;
     const game = manager.getGame(gameCode);
@@ -25,18 +36,8 @@ if (process.env.NODE_ENV === "test") {
     }
     try {
       game.seedGame(state);
-      const sockets = io.sockets.adapter.rooms.get(gameCode);
-      if (sockets) {
-        for (const socketId of sockets) {
-          const s = io.sockets.sockets.get(socketId);
-          if (s) {
-            const data = s.data as { playerId: string; gameCode: string };
-            if (data.playerId) {
-              s.emit("game:state", { gameState: game.getPlayerState(data.playerId) });
-            }
-          }
-        }
-      }
+      emitPlayerStates(io, game, gameCode);
+      maybeRunNextTurn(io, game, gameCode);
       res.json({ ok: true });
     } catch (err) {
       res.status(400).json({ error: (err as Error).message });

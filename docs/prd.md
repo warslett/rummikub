@@ -94,6 +94,14 @@ The official Rummikub rules are maintained in [rules.md](rules.md) as the single
 |----|-------------|
 | F-40 | Auto-sort run tiles: when a tile is added to a set that forms a valid run, tiles are automatically sorted in ascending value order with jokers placed correctly; groups are left as-is; sorting applies on both client (immediate visual feedback) and server (authoritative validation) |
 
+### 3.9 AI Opponents
+
+| ID | Requirement |
+|----|-------------|
+| F-41 | Players can add up to `MAX_PLAYERS - 1` AI opponents in the lobby, each configured with a model name |
+| F-42 | AI opponents take turns server-side through the same authoritative game API as human players; AI behaviour is configured via environment variables (`AI_PROVIDER`, `AI_BASE_URL`, `AI_API_KEY`, `AI_DEFAULT_MODEL`) |
+| F-44 | AI failures pause the game and surface the error to all players |
+
 ## 4. Non-Functional Requirements
 | ID | Requirement |
 |----|-------------|
@@ -379,11 +387,11 @@ These features are explicitly deferred but should be considered in architecture 
 
 ### Phase 4: Future
 
+- [ ] AI opponent (in progress: infrastructure in Plan 011, LLM provider in Plan 012, robustness in Plan 013)
+- [ ] Drag-and-drop tile placement
 - [ ] Chat
 - [ ] Valid move highlighting
-- [ ] Drag-and-drop tile placement
 - [ ] Touch support
-- [ ] AI opponent
 - [ ] Persistent storage
 - [ ] Turn timer
 - [ ] Sound effects / animations

@@ -45,4 +45,7 @@ export type {
   GameErrorPayload,
   SpectatorGameState,
   SpectatorJoinedPayload,
+  AiModelsPayload,
+  AiErrorPayload,
+  AiScriptAction,
 } from "./types.js";

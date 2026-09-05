@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { GameContext, useGame } from "./contexts/GameContext";
+import type { LobbyPlayer } from "./contexts/GameContext";
 import { socket } from "./socket";
-import type { PlayerGameState, SpectatorGameState } from "@rummikub/shared";
+import type { PlayerGameState, SpectatorGameState, AiModelsPayload, AiErrorPayload } from "@rummikub/shared";
 import { Home } from "./pages/Home";
 import { Lobby } from "./pages/Lobby";
 import { GameBoard } from "./pages/GameBoard";
@@ -25,8 +26,10 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [gameEnded, setGameEnded] = useState<GameEndedData | null>(null);
   const [isSpectator, setIsSpectator] = useState(false);
-  const [lobbyPlayers, setLobbyPlayers] = useState<{ id: string; name: string }[]>([]);
+  const [lobbyPlayers, setLobbyPlayers] = useState<LobbyPlayer[]>([]);
   const [spectatorState, setSpectatorState] = useState<SpectatorGameState | null>(null);
+  const [aiModels, setAiModels] = useState<AiModelsPayload | null>(null);
+  const [aiError, setAiError] = useState<AiErrorPayload | null>(null);
 
   useEffect(() => {
     if (playerId) localStorage.setItem("rummikub_playerId", playerId);
@@ -83,8 +86,16 @@ export function App() {
       setPlayerId(pid);
     });
 
-    socket.on("game:lobbyState", ({ players }: { players: { id: string; name: string }[] }) => {
+    socket.on("game:lobbyState", ({ players }: { players: LobbyPlayer[] }) => {
       setLobbyPlayers(players);
+    });
+
+    socket.on("ai:models", (data: AiModelsPayload) => {
+      setAiModels(data);
+    });
+
+    socket.on("ai:error", (data: AiErrorPayload) => {
+      setAiError(data);
     });
 
     return () => {
@@ -97,13 +108,15 @@ export function App() {
       socket.off("game:created");
       socket.off("game:joined");
       socket.off("game:lobbyState");
+      socket.off("ai:models");
+      socket.off("ai:error");
     };
   }, []);
 
   const clearError = useCallback(() => setError(null), []);
 
   return (
-    <GameContext.Provider value={{ gameState, setGameState, playerId, setPlayerId, gameCode, setGameCode, error, setError: clearError, isSpectator, setIsSpectator, spectatorState, setSpectatorState, lobbyPlayers, setLobbyPlayers }}>
+    <GameContext.Provider value={{ gameState, setGameState, playerId, setPlayerId, gameCode, setGameCode, error, setError: clearError, isSpectator, setIsSpectator, spectatorState, setSpectatorState, lobbyPlayers, setLobbyPlayers, aiModels, setAiModels, aiError, setAiError }}>
       <BrowserRouter>
         <div className="min-h-screen bg-gray-900 text-white">
           {error && (
