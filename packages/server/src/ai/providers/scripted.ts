@@ -30,6 +30,9 @@ export class ScriptedProvider implements AiProvider {
 
     let turnEnded = false;
     for (const step of script) {
+      if (step.action === "fail") {
+        throw new Error(step.message);
+      }
       let res: { ok: boolean; error?: string };
       switch (step.action) {
         case "playSets":

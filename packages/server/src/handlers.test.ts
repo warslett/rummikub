@@ -202,6 +202,7 @@ describe("Socket Handlers AI Integration", () => {
     const runnerSpy = vi.spyOn(runnerModule, "maybeRunNextTurn").mockResolvedValue();
     const resetConversationsSpy = vi.spyOn(llmModule, "resetConversations").mockImplementation(() => {});
     const resetTurnContextSpy = vi.spyOn(runnerModule, "resetTurnContext").mockImplementation(() => {});
+    const resetAiErrorsSpy = vi.spyOn(runnerModule, "resetAiErrors").mockImplementation(() => {});
 
     socket.callbacks["game:create"]({ playerName: "Alice" });
     const createEvt = socket.emitted.find((e) => e.event === "game:created");
@@ -216,6 +217,7 @@ describe("Socket Handlers AI Integration", () => {
     expect(game.getState().roundNumber).toBe(2);
     expect(resetConversationsSpy).toHaveBeenCalledWith(gameCode, 2);
     expect(resetTurnContextSpy).toHaveBeenCalledWith(gameCode);
+    expect(resetAiErrorsSpy).toHaveBeenCalledWith(gameCode);
     expect(runnerSpy).toHaveBeenCalled();
   });
 });

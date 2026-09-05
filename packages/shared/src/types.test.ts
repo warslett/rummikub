@@ -94,7 +94,8 @@ describe("Shared AI Types", () => {
       { action: "endTurn" },
       { action: "endTurn", newBoard: [] },
       { action: "passTurn" },
+      { action: "fail", message: "Seeded failure" },
     ];
-    expect(actions).toHaveLength(7);
+    expect(actions).toHaveLength(8);
   });
 });

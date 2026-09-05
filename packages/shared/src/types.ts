@@ -170,4 +170,5 @@ export type AiScriptAction =
   | { action: "drawTile" }
   | { action: "undoTurn" }
   | { action: "endTurn"; newBoard?: TileSet[] }
-  | { action: "passTurn" };
+  | { action: "passTurn" }
+  | { action: "fail"; message: string };

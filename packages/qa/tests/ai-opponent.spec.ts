@@ -262,4 +262,106 @@ test.describe("AI Player Infrastructure", () => {
 
     await ctx.close();
   });
+
+  test("TC-AI-11: Scripted provider failure shows stuck banner", async ({ browser }) => {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+
+    const gameCode = await createGame(page, "Alice");
+    await addAiPlayer(page);
+    await startGameWithAi(page);
+
+    const gameState = await getGameStateFromServer(gameCode);
+    const humanPlayer = gameState.players.find((p: { isAI?: boolean }) => !p.isAI);
+    const aiPlayer = gameState.players.find((p: { isAI?: boolean }) => p.isAI);
+
+    await seedGameServer(gameCode, {
+      board: [],
+      racks: {
+        [humanPlayer.id]: [{ id: "blue-1-a", color: "blue", value: 1 }],
+        [aiPlayer.id]: [],
+      },
+      pool: [{ id: "black-5-a", color: "black", value: 5 }],
+      currentTurnPlayerId: aiPlayer.id,
+      hasInitialMeld: {
+        [humanPlayer.id]: true,
+        [aiPlayer.id]: true,
+      },
+      aiScripts: {
+        [aiPlayer.id]: [{ action: "fail", message: "Seeded failure" }],
+      },
+    });
+
+    await expect(
+      page.getByText(`AI player stuck: ${aiPlayer.name} — Seeded failure. Restart the server to recover.`)
+    ).toBeVisible({ timeout: 10000 });
+
+    // Game does not advance: the failed AI is still the current turn player
+    const stateAfter = await getGameStateFromServer(gameCode);
+    expect(stateAfter.players[stateAfter.currentTurnIndex].id).toBe(aiPlayer.id);
+
+    await ctx.close();
+  });
+
+  test("TC-AI-12: First AI turn succeeds before second AI errors", async ({ browser }) => {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+
+    const gameCode = await createGame(page, "Alice");
+    await addAiPlayer(page);
+    await addAiPlayer(page);
+    await startGameWithAi(page);
+
+    const gameState = await getGameStateFromServer(gameCode);
+    const humanPlayer = gameState.players.find((p: { isAI?: boolean }) => !p.isAI);
+    const aiPlayers = gameState.players.filter((p: { isAI?: boolean }) => p.isAI);
+    const ai1 = aiPlayers[0];
+    const ai2 = aiPlayers[1];
+
+    const meldSet = {
+      id: "set-1",
+      tiles: [
+        { id: "red-7-a", color: "red", value: 7 },
+        { id: "red-8-a", color: "red", value: 8 },
+        { id: "red-9-a", color: "red", value: 9 },
+      ],
+    };
+
+    await seedGameServer(gameCode, {
+      board: [],
+      racks: {
+        [humanPlayer.id]: [{ id: "blue-1-a", color: "blue", value: 1 }],
+        // Extra tile so ai1 does not empty its rack and win the game
+        [ai1.id]: [...meldSet.tiles, { id: "black-1-a", color: "black", value: 1 }],
+        // Non-empty rack so the game does not end via checkGameEnd before ai2's turn
+        [ai2.id]: [{ id: "black-2-a", color: "black", value: 2 }],
+      },
+      pool: [{ id: "black-5-a", color: "black", value: 5 }],
+      currentTurnPlayerId: ai1.id,
+      hasInitialMeld: {
+        [humanPlayer.id]: true,
+        [ai1.id]: true,
+        [ai2.id]: true,
+      },
+      aiScripts: {
+        [ai1.id]: [
+          { action: "playSets", sets: [meldSet] },
+          { action: "endTurn" },
+        ],
+        [ai2.id]: [{ action: "fail", message: "Second AI failure" }],
+      },
+    });
+
+    // Banner names only the failed AI
+    await expect(
+      page.getByText(`AI player stuck: ${ai2.name} — Second AI failure. Restart the server to recover.`)
+    ).toBeVisible({ timeout: 10000 });
+
+    // First AI's turn completed normally: board updated, turn stuck on the failed AI
+    const stateAfter = await getGameStateFromServer(gameCode);
+    expect(stateAfter.board).toHaveLength(1);
+    expect(stateAfter.players[stateAfter.currentTurnIndex].id).toBe(ai2.id);
+
+    await ctx.close();
+  });
 });

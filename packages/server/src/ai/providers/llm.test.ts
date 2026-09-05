@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Server as SocketIOServer } from "socket.io";
 import type OpenAI from "openai";
+import { RateLimitError, InternalServerError } from "openai";
 import { Game } from "../../game.js";
 import { AiTurnController } from "../controller.js";
 import { LlmProvider, resetConversations, purgeGame, _clearAllConversations } from "./llm.js";
@@ -24,6 +25,7 @@ interface RecordedCall {
   model: string;
   tools: unknown;
   messages: { role: string; content: unknown }[];
+  max_tokens?: number;
 }
 
 interface StubClient {
@@ -36,11 +38,17 @@ function createStubClient(): StubClient {
   const responses: (Error | Record<string, unknown>)[] = [];
   const calls: RecordedCall[] = [];
   const create = vi.fn(
-    async (args: { model: string; messages: { role: string; content: unknown }[]; tools: unknown }) => {
+    async (args: {
+      model: string;
+      messages: { role: string; content: unknown }[];
+      tools: unknown;
+      max_tokens?: number;
+    }) => {
       calls.push({
         model: args.model,
         tools: args.tools,
         messages: args.messages.map((m) => ({ role: m.role, content: m.content })),
+        max_tokens: args.max_tokens,
       });
       const next = responses.shift();
       if (next instanceof Error) {
@@ -113,6 +121,7 @@ describe("LlmProvider", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it("should send system prompt and turn-start message with the player's model and tools on first turn", async () => {
@@ -266,16 +275,172 @@ describe("LlmProvider", () => {
     expect(String(corrective.content)).toMatch(/Call a tool/i);
   });
 
-  it("should throw after exceeding the 50-iteration cap", async () => {
+  it("should throw after exceeding the iteration cap with reason iteration_cap", async () => {
     client.responses.push(
-      ...Array.from({ length: 50 }, () => toolCallMessage([{ id: "call-1", name: "get_game_state", arguments: "{}" }]))
+      ...Array.from({ length: 25 }, () => toolCallMessage([{ id: "call-1", name: "get_game_state", arguments: "{}" }]))
+    );
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await expect(
+      provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), { turnNumber: 1, eventsNote: "" })
+    ).rejects.toThrow(/25/);
+
+    expect(client.calls).toHaveLength(25);
+    const lines = logSpy.mock.calls.map((c) => JSON.parse(c[0] as string) as Record<string, unknown>);
+    const errorLine = lines.find((l) => l.event === "error") as { data: { reason?: string } };
+    expect(errorLine.data.reason).toBe("iteration_cap");
+  });
+
+  it("should retry transient errors with backoff and complete the turn", async () => {
+    vi.useFakeTimers();
+    client.responses.push(
+      new RateLimitError(429, {}, "slow down", new Headers()),
+      toolCallMessage([{ id: "call-1", name: "draw_tile", arguments: "{}" }])
+    );
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const promise = provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), {
+      turnNumber: 1,
+      eventsNote: "",
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    await promise;
+
+    expect(client.calls).toHaveLength(2);
+    expect(game.getPlayerState(aiPlayerId).isYourTurn).toBe(false);
+    const lines = logSpy.mock.calls.map((c) => JSON.parse(c[0] as string) as Record<string, unknown>);
+    const retry = lines.find((l) => l.event === "retry") as { data: { attempt: number; delayMs: number } };
+    expect(retry).toBeDefined();
+    expect(retry.data.attempt).toBe(1);
+    expect(retry.data.delayMs).toBeGreaterThanOrEqual(1000);
+    expect(retry.data.delayMs).toBeLessThan(2000);
+  });
+
+  it("should pause after exhausting all retries", async () => {
+    vi.useFakeTimers();
+    const lastError = new InternalServerError(500, {}, "boom", new Headers());
+    client.responses.push(
+      new InternalServerError(500, {}, "boom", new Headers()),
+      new InternalServerError(500, {}, "boom", new Headers()),
+      new InternalServerError(500, {}, "boom", new Headers()),
+      lastError
+    );
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const promise = provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), {
+      turnNumber: 1,
+      eventsNote: "",
+    });
+    const assertion = expect(promise).rejects.toBe(lastError);
+    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(5000);
+    await assertion;
+
+    expect(client.calls).toHaveLength(4);
+    const lines = logSpy.mock.calls.map((c) => JSON.parse(c[0] as string) as Record<string, unknown>);
+    const retries = lines.filter((l) => l.event === "retry");
+    expect(retries).toHaveLength(3);
+    const errorLine = lines.find((l) => l.event === "error") as { data: { message: string } };
+    expect(errorLine.data.message).toContain("500");
+  });
+
+  it("should not retry fatal auth errors", async () => {
+    vi.useFakeTimers();
+    const authError = new Error("401 Invalid API key");
+    client.responses.push(authError);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const promise = provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), {
+      turnNumber: 1,
+      eventsNote: "",
+    });
+    const assertion = expect(promise).rejects.toThrow("401 Invalid API key");
+    await vi.advanceTimersByTimeAsync(10000);
+    await assertion;
+
+    expect(client.calls).toHaveLength(1);
+    const lines = logSpy.mock.calls.map((c) => JSON.parse(c[0] as string) as Record<string, unknown>);
+    expect(lines.filter((l) => l.event === "retry")).toHaveLength(0);
+  });
+
+  it("should throw with reason malformed after two all-malformed completions", async () => {
+    client.responses.push(
+      toolCallMessage([{ id: "call-1", name: "explode_game", arguments: "{}" }]),
+      toolCallMessage([{ id: "call-2", name: "explode_game", arguments: "{}" }])
+    );
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await expect(
+      provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), { turnNumber: 1, eventsNote: "" })
+    ).rejects.toThrow(/malformed/i);
+
+    expect(client.calls).toHaveLength(2);
+    const lines = logSpy.mock.calls.map((c) => JSON.parse(c[0] as string) as Record<string, unknown>);
+    const errorLine = lines.find((l) => l.event === "error") as { data: { reason?: string } };
+    expect(errorLine.data.reason).toBe("malformed");
+  });
+
+  it("should reset the malformed streak on a successful completion", async () => {
+    client.responses.push(
+      toolCallMessage([{ id: "call-1", name: "explode_game", arguments: "{}" }]),
+      toolCallMessage([{ id: "call-2", name: "get_game_state", arguments: "{}" }]),
+      toolCallMessage([{ id: "call-3", name: "explode_game", arguments: "{}" }]),
+      toolCallMessage([{ id: "call-4", name: "explode_game", arguments: "{}" }])
     );
 
     await expect(
       provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), { turnNumber: 1, eventsNote: "" })
-    ).rejects.toThrow(/50/);
+    ).rejects.toThrow(/malformed/i);
 
-    expect(client.calls).toHaveLength(50);
+    expect(client.calls).toHaveLength(4);
+  });
+
+  it("should compact the conversation before the turn when over the token limit", async () => {
+    vi.stubEnv("AI_CONTEXT_TOKEN_LIMIT", "50");
+    vi.stubEnv("AI_COMPACT_KEEP_TURNS", "1");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    client.responses.push(
+      toolCallMessage([{ id: "call-1", name: "draw_tile", arguments: "{}" }]),
+      toolCallMessage([{ id: "call-2", name: "draw_tile", arguments: "{}" }]),
+      { choices: [{ message: { role: "assistant", content: "The player drew tiles." } }] },
+      toolCallMessage([{ id: "call-3", name: "draw_tile", arguments: "{}" }])
+    );
+
+    const controller = new AiTurnController(io, game, "TEST01", aiPlayerId);
+    await provider.takeTurn(controller, { turnNumber: 1, eventsNote: "" });
+    game.seedGame({
+      board: [],
+      racks: { p1: [], [aiPlayerId]: [R7] },
+      pool: [POOL_TILE],
+      currentTurnPlayerId: aiPlayerId,
+      hasInitialMeld: { p1: true, [aiPlayerId]: true },
+    });
+    await provider.takeTurn(controller, { turnNumber: 2, eventsNote: "" });
+    game.seedGame({
+      board: [],
+      racks: { p1: [], [aiPlayerId]: [R7] },
+      pool: [POOL_TILE],
+      currentTurnPlayerId: aiPlayerId,
+      hasInitialMeld: { p1: true, [aiPlayerId]: true },
+    });
+    await provider.takeTurn(controller, { turnNumber: 3, eventsNote: "" });
+
+    expect(client.calls[2].tools).toEqual([]);
+    expect(client.calls[2].max_tokens).toBe(2000);
+    const turn3Messages = client.calls[3].messages;
+    const summaryMsg = turn3Messages.find((m) => String(m.content).includes("[Summary of earlier conversation]"));
+    expect(summaryMsg).toBeDefined();
+    expect(String(turn3Messages[turn3Messages.length - 1].content)).toContain("Turn 3");
+
+    const lines = logSpy.mock.calls.map((c) => JSON.parse(c[0] as string) as Record<string, unknown>);
+    const compactions = lines.filter((l) => l.event === "compaction") as {
+      data: { beforeTokens: number; afterTokens: number; mode: string };
+    }[];
+    expect(compactions.length).toBeGreaterThanOrEqual(1);
+    const realCompaction = compactions.find((c) => c.data.afterTokens < c.data.beforeTokens);
+    expect(realCompaction).toBeDefined();
+    expect(realCompaction?.data.mode).toBe("summary");
   });
 
   it("should persist the conversation across turns and reset it on resetConversations", async () => {

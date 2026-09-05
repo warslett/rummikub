@@ -5,6 +5,9 @@ export type AiLogEvent =
   | "tool_call"
   | "tool_result"
   | "turn_complete"
+  | "retry"
+  | "compaction"
+  | "compaction_fallback"
   | "error";
 
 export function aiLog(

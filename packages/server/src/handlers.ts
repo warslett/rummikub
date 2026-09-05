@@ -5,7 +5,7 @@ import type { TileSet } from "@rummikub/shared";
 import type { SeedState } from "./game.js";
 import type { SpectatorGameState } from "@rummikub/shared";
 import { emitPlayerStates, emitGameEnded, emitStalemateEnded } from "./emissions.js";
-import { maybeRunNextTurn, resetTurnContext } from "./ai/runner.js";
+import { maybeRunNextTurn, resetTurnContext, resetAiErrors } from "./ai/runner.js";
 import { resetConversations } from "./ai/providers/llm.js";
 import { getModels } from "./ai/models.js";
 
@@ -269,6 +269,7 @@ export function registerHandlers(io: SocketIOServer): void {
 
       resetConversations(data.gameCode, game.getState().roundNumber);
       resetTurnContext(data.gameCode);
+      resetAiErrors(data.gameCode);
 
       emitPlayerStates(io, game, data.gameCode);
       maybeRunNextTurn(io, game, data.gameCode);
