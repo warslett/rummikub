@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Server as SocketIOServer } from "socket.io";
 import { registerHandlers, manager } from "./handlers.js";
 import * as runnerModule from "./ai/runner.js";
+import * as llmModule from "./ai/providers/llm.js";
 import type { GameLobbyStatePayload, AiModelsPayload } from "@rummikub/shared";
 
 interface MockSocket {
@@ -195,5 +196,26 @@ describe("Socket Handlers AI Integration", () => {
 
     const rejectEvt = socket.emitted.find((e) => e.event === "move:rejected");
     expect(rejectEvt).toBeUndefined();
+  });
+
+  it("should reset AI conversations and turn context on game:playAgain", () => {
+    const runnerSpy = vi.spyOn(runnerModule, "maybeRunNextTurn").mockResolvedValue();
+    const resetConversationsSpy = vi.spyOn(llmModule, "resetConversations").mockImplementation(() => {});
+    const resetTurnContextSpy = vi.spyOn(runnerModule, "resetTurnContext").mockImplementation(() => {});
+
+    socket.callbacks["game:create"]({ playerName: "Alice" });
+    const createEvt = socket.emitted.find((e) => e.event === "game:created");
+    const gameCode = (createEvt?.data as { gameCode: string }).gameCode;
+    const game = manager.getGame(gameCode)!;
+    game.addAiPlayer("test-model");
+    game.start();
+    game.getState().phase = "ended";
+
+    socket.callbacks["game:playAgain"]();
+
+    expect(game.getState().roundNumber).toBe(2);
+    expect(resetConversationsSpy).toHaveBeenCalledWith(gameCode, 2);
+    expect(resetTurnContextSpy).toHaveBeenCalledWith(gameCode);
+    expect(runnerSpy).toHaveBeenCalled();
   });
 });

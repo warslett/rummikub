@@ -14,6 +14,7 @@
 | **GameManager** | A singleton registry that maps game codes to `Game` instances. Responsible for generating unique game codes, providing lookup, and periodically cleaning up games inactive for over 24 hours. Not persisted (in-memory only). |
 | **SetValidationError** | A structured validation error for an invalid tile set. Contains the set ID, a machine-readable reason code (`SetValidationReason`), and a human-readable message. Produced by `getSetValidationError` and `getBoardValidationErrors` in the shared package. |
 | **AiProvider** | Pluggable turn-taker: scripted or LLM; invoked by the AiTurnRunner through an AiTurnController. |
+| **LlmProvider** | Tool-calling AI agent (`AI_PROVIDER=llm`). Runs an agent loop against an OpenAI-compatible chat completions endpoint: the model receives a system prompt (rules + its private state) and takes its turn by calling tools that map 1:1 to the AiTurnController verbs (`get_game_state`, `play_sets`, `manipulate_board`, `undo_turn`, `draw_tile`, `end_turn`, `pass_turn`). Rejections are returned as tool-result errors so the model can retry. Its **conversation** is the ordered list of messages (system prompt, turn-start notes, assistant replies, tool results) kept per game/round/player and reset on Play Again. Every request, response, tool call and tool result is logged as JSON lines to the server console. |
 | **AiTurnController** | Server-side facade over the Game class with identical authority to socket handlers; returns errors as values instead of events. |
 | **AiTurnRunner** | Registry that triggers provider runs when the current player is AI; records AI errors and emits `ai:error`. |
 
@@ -27,6 +28,7 @@
 | Game → TurnAction | 1:N | A game records the actions taken during the current turn. Cleared on turn end. |
 | Game → TurnSnapshot | 1:0..1 | A game has at most one turn snapshot (created on first action, cleared on turn end). |
 | Game → AiTurnController | 1:0..N | A game has an AiTurnController per AI player during AI turns. |
+| Game → LlmProvider conversation | 1:0..N per AI player | Each AI player in a game has its own LLM conversation (ordered messages), keyed by game code, round number and player id; reset when a new round starts. |
 | AiTurnRunner → Game | 1:N | The runner triggers AI turns across all active games. |
 | Player → Tile (rack) | 1:N | A player's rack holds their private tiles (0–14+ tiles). |
 | TileSet → Tile | 1:N (3+) | A tile set contains 3 or more tiles that form a valid run or group. |

@@ -1,6 +1,8 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { GameManager } from "./gameManager";
 import { GAME_CODE_LENGTH, GAME_CODE_CHARS } from "@rummikub/shared";
+import * as llmModule from "./ai/providers/llm.js";
+import * as runnerModule from "./ai/runner.js";
 
 describe("GameManager", () => {
   let manager: GameManager;
@@ -67,6 +69,34 @@ describe("GameManager", () => {
       const game1 = manager.getGame(g1.gameCode);
       const game2 = manager.getGame(g2.gameCode);
       expect(game1).not.toBe(game2);
+    });
+  });
+
+  describe("cleanupExpiredGames", () => {
+    it("should purge AI conversations and turn tracking for expired games", () => {
+      vi.useFakeTimers();
+      try {
+        const now = Date.now();
+        const { gameCode } = manager.createGame();
+        const stale = manager.createGame();
+        const game = manager.getGame(stale.gameCode)!;
+        game.getState().lastActivityAt = now - 25 * 60 * 60 * 1000;
+
+        const purgeGameSpy = vi.spyOn(llmModule, "purgeGame").mockImplementation(() => {});
+        const resetTurnContextSpy = vi.spyOn(runnerModule, "resetTurnContext").mockImplementation(() => {});
+
+        const removed = manager.cleanupExpiredGames();
+
+        expect(removed).toBe(1);
+        expect(manager.getGame(stale.gameCode)).toBeUndefined();
+        expect(manager.getGame(gameCode)).toBeDefined();
+        expect(purgeGameSpy).toHaveBeenCalledWith(stale.gameCode);
+        expect(resetTurnContextSpy).toHaveBeenCalledWith(stale.gameCode);
+        expect(purgeGameSpy).not.toHaveBeenCalledWith(gameCode);
+      } finally {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+      }
     });
   });
 });

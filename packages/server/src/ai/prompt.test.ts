@@ -1,0 +1,50 @@
+import { describe, it, expect } from "vitest";
+import { buildSystemPrompt, buildTurnStartMessage } from "./prompt.js";
+
+describe("buildSystemPrompt", () => {
+  const prompt = buildSystemPrompt("AI: claude-sonnet-5", "claude-sonnet-5");
+
+  it("should address the player by name and the Sabra variant", () => {
+    expect(prompt).toContain("AI: claude-sonnet-5");
+    expect(prompt).toContain("Sabra");
+  });
+
+  it("should include the initial meld minimum of 30", () => {
+    expect(prompt).toContain("30");
+  });
+
+  it("should require at least one rack tile to end a turn", () => {
+    expect(prompt).toMatch(/at least one .* rack/i);
+  });
+
+  it("should include the turn protocol with the turn-ending tools", () => {
+    expect(prompt).toContain("get_game_state");
+    expect(prompt).toContain("draw_tile");
+    expect(prompt).toContain("end_turn");
+    expect(prompt).toContain("pass_turn");
+    expect(prompt).toMatch(/exactly one/i);
+  });
+
+  it("should explain that tool errors are rejections to adapt to", () => {
+    expect(prompt).toMatch(/error/i);
+    expect(prompt).toMatch(/reject/i);
+  });
+});
+
+describe("buildTurnStartMessage", () => {
+  it("should include the turn number and a nudge to call get_game_state", () => {
+    const message = buildTurnStartMessage(1, "");
+    expect(message).toContain("1");
+    expect(message).toContain("get_game_state");
+  });
+
+  it("should format the events note into the message", () => {
+    const message = buildTurnStartMessage(3, "Alice drew a tile; Bob played a 3-tile set");
+    expect(message).toContain("Alice drew a tile; Bob played a 3-tile set");
+  });
+
+  it("should note when there are no new events", () => {
+    const message = buildTurnStartMessage(2, "");
+    expect(message).toMatch(/no new events/i);
+  });
+});

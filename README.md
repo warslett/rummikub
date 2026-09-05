@@ -71,10 +71,35 @@ docs/              — Project documentation
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AI_PROVIDER` | `scripted` | AI turn provider (`scripted` or future `llm`) |
-| `AI_BASE_URL` | `https://opencode.ai/zen/v1` | Base URL for OpenAI-compatible model endpoints |
-| `AI_API_KEY` | (empty) | API key for the AI gateway |
-| `AI_DEFAULT_MODEL` | `scripted-default` | Default model name pre-selected in the lobby |
+| `AI_PROVIDER` | `scripted` | AI turn provider: `scripted` (deterministic, for tests) or `llm` (tool-calling agent against an OpenAI-compatible endpoint) |
+| `AI_BASE_URL` | `https://opencode.ai/zen/v1` | Base URL for the OpenAI-compatible chat completions endpoint used by the `llm` provider |
+| `AI_API_KEY` | (empty) | API key for the AI gateway. Required when `AI_PROVIDER=llm` (the AI fails fast with a clear error at its first turn if missing) |
+| `AI_DEFAULT_MODEL` | `scripted-default` | Default model name pre-selected in the lobby; used by the `llm` provider when an AI player has no model set |
+| `AI_REQUEST_TIMEOUT_MS` | `300000` | Per-request timeout in milliseconds for LLM completions (models can take minutes on complex boards) |
+
+## Playing against AI models
+
+Set the provider to `llm` and point it at any OpenAI-compatible gateway:
+
+```bash
+AI_PROVIDER=llm \
+AI_BASE_URL=https://opencode.ai/zen/v1 \
+AI_API_KEY=<your-key> \
+AI_DEFAULT_MODEL=claude-sonnet-5 \
+docker compose -f docker-compose.dev.yml up
+```
+
+Then create a game, add an AI player in the lobby (pick a model from the list), and start. The AI takes its turns through a tool-calling agent loop: it receives the rules and its private state in a system prompt, and plays by calling the same verbs a human has (`get_game_state`, `play_sets`, `manipulate_board`, `undo_turn`, `draw_tile`, `end_turn`, `pass_turn`). Invalid moves are rejected with the same messages a human would see, returned as tool results so the model can retry. The conversation persists across the AI's turns within a round and is reset on Play Again.
+
+### Watching the AI's logs
+
+Every prompt, response, tool call and tool result is logged to the server console as JSON lines, correlated by `gameCode` and `playerId`:
+
+```bash
+docker compose -f docker-compose.dev.yml logs -f dev-server | grep '"event"'
+```
+
+Events: `system_prompt`, `request`, `response`, `tool_call`, `tool_result`, `turn_complete`, `error`. If the model or gateway fails, the game pauses and all players see an error banner (`ai:error`).
 
 ## Documentation
 

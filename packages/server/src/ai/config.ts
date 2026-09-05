@@ -3,6 +3,7 @@ export interface AiConfig {
   baseUrl: string;
   apiKey: string;
   defaultModel: string;
+  requestTimeoutMs: number;
 }
 
 export const aiConfig: Readonly<AiConfig> = Object.freeze({
@@ -17,5 +18,9 @@ export const aiConfig: Readonly<AiConfig> = Object.freeze({
   },
   get defaultModel(): string {
     return process.env.AI_DEFAULT_MODEL || "scripted-default";
+  },
+  get requestTimeoutMs(): number {
+    const parsed = Number(process.env.AI_REQUEST_TIMEOUT_MS);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 300000;
   },
 });

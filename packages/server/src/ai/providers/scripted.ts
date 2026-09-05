@@ -1,11 +1,10 @@
 import type { AiTurnController } from "../controller.js";
+import type { AiProvider, TurnContext } from "./types.js";
 
-export interface AiProvider {
-  takeTurn(controller: AiTurnController): Promise<void> | void;
-}
+export type { AiProvider, TurnContext } from "./types.js";
 
 export class ScriptedProvider implements AiProvider {
-  async takeTurn(controller: AiTurnController): Promise<void> {
+  async takeTurn(controller: AiTurnController, _context?: TurnContext): Promise<void> {
     const game = controller.getGame();
     const playerId = controller.getPlayerId();
     const script = game.getState().seededScripts?.[playerId];
