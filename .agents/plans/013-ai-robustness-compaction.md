@@ -64,10 +64,11 @@ The scripted provider gains failure-injection modes (seeded like scripts) to exe
 ### Step 1: Server — error classification and retry wrapper
 
 - `packages/server/src/ai/retry.ts`:
-  - `classifyError(err): "transient" | "fatal"` — inspect openai SDK error status/code (429, >=500, ECONNRESET/ETIMEDOUT/ENOTFOUND, timeout aborts → transient; 401/403/context-length/others → fatal)
+  - `classifyError(err): "transient" | "fatal"` — inspect openai SDK errors: `APIError.status` (429, >=500 → transient; 401/403, context-length → fatal), connection failures (`APIConnectionError`, `ECONNRESET`/`ETIMEDOUT`/`ENOTFOUND`) and request timeouts (`APIConnectionTimeoutError`) → transient; anything else → fatal
   - `withRetries(fn, { maxRetries, baseMs }, onRetry): Promise` — exponential backoff + jitter; invokes `onRetry(attempt, delay, error)` for logging
 - `config.ts`: add `AI_MAX_RETRIES` (3), `AI_RETRY_BASE_MS` (1000)
 - `LlmProvider`: wrap every `chat.completions.create` (main loop AND summarization) in `withRetries`; fatal errors throw immediately; log `event: "retry"` per attempt and rethrow the last error when exhausted
+- **Keep the OpenAI client's `maxRetries: 0`** (already set in Plan 012's `llm.ts` constructor): `withRetries` must remain the only retry layer — SDK-level retries would stack on top and multiply the delay
 
 **Tests** (`retry.test.ts` + provider tests):
 - Transient error twice then success → succeeds, 2 retries, correct delays (fake timers)
@@ -80,7 +81,8 @@ The scripted provider gains failure-injection modes (seeded like scripts) to exe
 ### Step 2: Server — configurable iteration cap + malformed limit
 
 - `config.ts`: `AI_MAX_TOOL_ITERATIONS` (25), `AI_MALFORMED_LIMIT` (2)
-- `LlmProvider` loop: replace hardcoded 50 with the env; track consecutive completions where zero tool calls succeeded and ≥1 was malformed → pause after `AI_MALFORMED_LIMIT`; log clearly in both cases (`event: "error"` with `data.reason: "iteration_cap" | "malformed"`)
+- `tools.ts`: add a `malformed?: boolean` flag to the `executeTool` outcome, set only for unknown tool names / unparseable or non-object arguments. Controller rejections (`ok: false` on a well-formed call with invalid game data) must NOT set it — that is the error-feedback loop working, not a malformed call
+- `LlmProvider` loop: replace the hardcoded `MAX_ITERATIONS = 50` with the env; track consecutive completions where zero tool calls succeeded and ≥1 was malformed → pause after `AI_MALFORMED_LIMIT`; the Plan 012 plain-text corrective path (corrective message once, then error) stays unchanged and does not count toward the streak; log clearly in both cases by extending the existing `error` event data (`{ iteration?, message }`) with `reason: "iteration_cap" | "malformed"`
 
 **Tests:** cap breach at 25 throws with reason `iteration_cap`; two all-malformed completions throw with reason `malformed`; a success resets the malformed streak.
 
@@ -89,15 +91,15 @@ The scripted provider gains failure-injection modes (seeded like scripts) to exe
 ### Step 3: Server — token estimation and compaction
 
 - `packages/server/src/ai/compaction.ts`:
-  - `estimateTokens(messages): number` — chars/4 across message contents (safely guarding against `null` content) + stringified tool calls
+  - `estimateTokens(messages): number` — chars/4 across message contents (safely guarding against `null` content on assistant `tool_calls` messages) + stringified tool calls
   - `needsCompaction(messages, limit): boolean`
-  - `compact(conversation, client, { keepExchanges, model, gameCode, playerId }): Promise<ChatMessage[]>`:
-    - Split into `older` (system prompt excluded) and `kept` (last `keepExchanges` request/response exchanges, aligned to turn boundary before a `user` turn-start message)
+  - `compact(conversation, client, { keepExchanges, model, gameCode, playerId }): Promise<ChatCompletionMessageParam[]>` (openai message type — same as the Plan 012 conversation store):
+    - Split into `older` (system prompt excluded) and `kept` (last `keepExchanges` request/response exchanges, aligned to turn boundary immediately before a `user` turn-start message). Safe by construction: Plan 012 pads every assistant `tool_calls` message with tool results before the turn ends ("Turn has already ended"), so any slice starting at a turn boundary is a fully-answered, API-valid request
     - Summarization prompt → summary completion (with retries; `tools: []`, low `max_tokens` e.g. 2000)
-    - Return `[system, user("[Summary of earlier conversation]: " + summary), note, ...kept]` (gateway role compatible)
-    - On summarization failure → `[system, note, ...kept]` (truncation fallback) with `compaction_fallback` log
+    - Return `[system, user("[Summary of earlier conversation]: " + summary + fixed note), ...kept]` — merge the fixed note ("Earlier conversation summarized. Board state is authoritative via `get_game_state`; do not rely on exact earlier tile positions.") into the same user message (gateway role compatible; avoids consecutive user messages)
+    - On summarization failure → `[system, user(fixed note), ...kept]` (truncation fallback) with `compaction_fallback` log
 - `config.ts`: `AI_CONTEXT_TOKEN_LIMIT` (100000), `AI_COMPACT_KEEP_TURNS` (6)
-- `LlmProvider.takeTurn`: before pushing the turn-start message, `needsCompaction` → `compact` → log `event: "compaction"` (before/after estimates, mode: `summary | fallback`)
+- `LlmProvider.takeTurn`: before pushing the turn-start message, `needsCompaction` → `compact` → store the returned array back into the conversation map (`conversations.set(key, compacted)`) → log `event: "compaction"` (before/after estimates, mode: `summary | fallback`)
 
 **Tests** (`compaction.test.ts` + provider integration):
 - Under limit → untouched
@@ -110,8 +112,9 @@ The scripted provider gains failure-injection modes (seeded like scripts) to exe
 
 ### Step 4: Server — scripted provider failure injection
 
-- `ScriptedProvider`: support a seeded script action `{ action: "fail"; message: string }` (add to `AiScriptAction` in shared types) → throws with the message when reached
-- Enables TC-AI-11/TC-AI-12 without network
+- `ScriptedProvider`: support a seeded script action `{ action: "fail"; message: string }` (add to `AiScriptAction` in shared types) → `throw new Error(step.message)` when reached, so the runner's `ai:error` payload and stuck banner surface the seeded message
+- Enables TC-AI-11/TC-AI-12 without network; for TC-AI-12 the first AI's seeded script must end its turn normally (e.g. `{ action: "endTurn" }`) so the second AI's turn arrives
+- Hardening (carried over from the Plan 012 code review): export `resetAiErrors(gameCode)` from `runner.ts` and call it in the `game:playAgain` handler alongside the existing `resetConversations`/`resetTurnContext` calls. Currently unreachable (an errored game is stuck mid-turn and can't reach round end), but prevents stale errors if Plan 013's retry paths change that reachability
 
 **Tests:** `fail` action throws; script before it executed (board mutated) before the throw.
 
@@ -137,7 +140,9 @@ The scripted provider gains failure-injection modes (seeded like scripts) to exe
 | `packages/server/src/ai/compaction.ts` | New — token estimation, compaction, fallback truncation |
 | `packages/server/src/ai/config.ts` | New env knobs (retries, cap, malformed limit, token limit, keep turns) |
 | `packages/server/src/ai/providers/llm.ts` | Use retry wrapper, configurable caps, malformed streak, compaction before turn |
+| `packages/server/src/ai/tools.ts` | `malformed` flag on `executeTool` outcome |
 | `packages/shared/src/types.ts` | `AiScriptAction` gains `{ action: "fail"; message: string }` |
+| `packages/shared/src/types.test.ts` | `AiScriptAction` variants test gains the `fail` variant |
 | `packages/server/src/ai/providers/scripted.ts` | `fail` action support |
 | `packages/server/src/ai/*.test.ts` | Retry, compaction, cap, malformed, provider tests |
 | `packages/qa/tests/ai-opponent.spec.ts` | TC-AI-11, TC-AI-12 |

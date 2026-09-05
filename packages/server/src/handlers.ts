@@ -5,7 +5,8 @@ import type { TileSet } from "@rummikub/shared";
 import type { SeedState } from "./game.js";
 import type { SpectatorGameState } from "@rummikub/shared";
 import { emitPlayerStates, emitGameEnded, emitStalemateEnded } from "./emissions.js";
-import { maybeRunNextTurn } from "./ai/runner.js";
+import { maybeRunNextTurn, resetTurnContext } from "./ai/runner.js";
+import { resetConversations } from "./ai/providers/llm.js";
 import { getModels } from "./ai/models.js";
 
 const manager = new GameManager();
@@ -265,6 +266,9 @@ export function registerHandlers(io: SocketIOServer): void {
         socket.emit("move:rejected", { reason: (err as Error).message });
         return;
       }
+
+      resetConversations(data.gameCode, game.getState().roundNumber);
+      resetTurnContext(data.gameCode);
 
       emitPlayerStates(io, game, data.gameCode);
       maybeRunNextTurn(io, game, data.gameCode);

@@ -1,5 +1,7 @@
 import { GAME_CODE_CHARS, GAME_CODE_LENGTH } from "@rummikub/shared";
 import { Game } from "./game.js";
+import { purgeGame } from "./ai/providers/llm.js";
+import { resetTurnContext } from "./ai/runner.js";
 
 const INACTIVITY_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
@@ -32,6 +34,8 @@ export class GameManager {
     for (const [code, game] of this.games) {
       if (now - game.getState().lastActivityAt > INACTIVITY_TIMEOUT_MS) {
         this.games.delete(code);
+        purgeGame(code);
+        resetTurnContext(code);
         removed++;
       }
     }
