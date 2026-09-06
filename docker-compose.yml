@@ -6,7 +6,18 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - PORT=3000
+      - PORT=${PORT:-3000}
+      - AI_PROVIDER=${AI_PROVIDER:-scripted}
+      - AI_BASE_URL=${AI_BASE_URL:-https://opencode.ai/zen/v1}
+      - AI_API_KEY=${AI_API_KEY:-}
+      - AI_DEFAULT_MODEL=${AI_DEFAULT_MODEL:-scripted-default}
+      - AI_REQUEST_TIMEOUT_MS=${AI_REQUEST_TIMEOUT_MS:-300000}
+      - AI_MAX_RETRIES=${AI_MAX_RETRIES:-3}
+      - AI_RETRY_BASE_MS=${AI_RETRY_BASE_MS:-1000}
+      - AI_MAX_TOOL_ITERATIONS=${AI_MAX_TOOL_ITERATIONS:-25}
+      - AI_MALFORMED_LIMIT=${AI_MALFORMED_LIMIT:-2}
+      - AI_CONTEXT_TOKEN_LIMIT=${AI_CONTEXT_TOKEN_LIMIT:-100000}
+      - AI_COMPACT_KEEP_TURNS=${AI_COMPACT_KEEP_TURNS:-6}
 
   client:
     build:
