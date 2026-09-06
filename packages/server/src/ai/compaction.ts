@@ -1,7 +1,6 @@
 import type OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
 import { aiConfig } from "./config.js";
-import { aiLog } from "./logger.js";
 import { withRetries } from "./retry.js";
 
 export const COMPACTION_NOTE =
@@ -60,8 +59,6 @@ function serializeMessages(messages: ChatCompletionMessageParam[]): string {
 export interface CompactOptions {
   keepExchanges: number;
   model: string;
-  gameCode: string;
-  playerId: string;
 }
 
 export interface CompactResult {
@@ -86,7 +83,7 @@ export async function compact(
   client: OpenAI,
   options: CompactOptions
 ): Promise<CompactResult> {
-  const { keepExchanges, model, gameCode, playerId } = options;
+  const { keepExchanges, model } = options;
   const system = conversation[0]?.role === "system" ? conversation[0] : undefined;
   const rest = system ? conversation.slice(1) : conversation;
 
@@ -107,14 +104,11 @@ export async function compact(
   }
 
   try {
-    const summary = await summarize(client, model, older, gameCode, playerId);
+    const summary = await summarize(client, model, older);
     const summaryPrefix = `[Summary of earlier conversation]: ${summary}\n\n${COMPACTION_NOTE}`;
     const base: ChatCompletionMessageParam[] = system ? [system] : [];
     return { messages: [...base, ...prefixFirstKept(kept, summaryPrefix)], mode: "summary" };
-  } catch (err) {
-    aiLog(gameCode, playerId, model, "compaction_fallback", {
-      message: err instanceof Error ? err.message : "Unknown summarization error",
-    });
+  } catch {
     const base: ChatCompletionMessageParam[] = system ? [system] : [];
     return { messages: [...base, ...prefixFirstKept(kept, COMPACTION_NOTE)], mode: "fallback" };
   }
@@ -123,9 +117,7 @@ export async function compact(
 async function summarize(
   client: OpenAI,
   model: string,
-  older: ChatCompletionMessageParam[],
-  gameCode: string,
-  playerId: string
+  older: ChatCompletionMessageParam[]
 ): Promise<string> {
   const completion = await withRetries(
     () =>
@@ -139,15 +131,7 @@ async function summarize(
         max_tokens: 2000,
         stream: false,
       }),
-    { maxRetries: aiConfig.maxRetries, baseMs: aiConfig.retryBaseMs },
-    (attempt, delayMs, error) => {
-      aiLog(gameCode, playerId, model, "retry", {
-        attempt,
-        delayMs,
-        error: error instanceof Error ? error.message : String(error),
-        phase: "summarization",
-      });
-    }
+    { maxRetries: aiConfig.maxRetries, baseMs: aiConfig.retryBaseMs }
   );
   const content = completion.choices[0]?.message?.content;
   if (!content) {

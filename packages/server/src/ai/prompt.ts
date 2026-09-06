@@ -10,6 +10,7 @@ export function buildSystemPrompt(playerName: string, model: string): string {
     "  - A group: 3 or 4 tiles of the same number in different colors (e.g. red 7, blue 7, black 7).",
     "- A joker may substitute for any tile in a set. A joker must be replaced or reused in the same turn if you take it from the board.",
     `- Your first play of the game (initial meld) must be worth at least ${INITIAL_MELD_MINIMUM} points, counting the face value of the tiles you play from your rack (a joker counts as the value it represents).`,
+    "- Until you have made your initial meld, you cannot manipulate the board: your initial meld must be formed only from tiles in your own rack. You may not rearrange or reuse any existing sets on the board before your initial meld is complete.",
     "- You cannot leave loose tiles on the board: every set on the board must remain valid at all times.",
     `- To end a turn after manipulating or playing, you must have played at least one tile from your rack onto the board this turn.`,
     "- If you cannot (or do not want to) play, you must draw a tile from the pool, which ends your turn.",

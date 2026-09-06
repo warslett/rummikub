@@ -1,14 +1,6 @@
-export type AiLogEvent =
-  | "system_prompt"
-  | "request"
-  | "response"
-  | "tool_call"
-  | "tool_result"
-  | "turn_complete"
-  | "retry"
-  | "compaction"
-  | "compaction_fallback"
-  | "error";
+import { aiConfig } from "./config.js";
+
+export type AiLogEvent = "request" | "reasoning" | "response";
 
 export function aiLog(
   gameCode: string,
@@ -17,6 +9,9 @@ export function aiLog(
   event: AiLogEvent,
   data: unknown
 ): void {
+  if (!aiConfig.debug) {
+    return;
+  }
   console.log(
     JSON.stringify({
       ts: new Date().toISOString(),

@@ -63,7 +63,7 @@ export async function addAiPlayer(page: Page, model?: string): Promise<void> {
   if (model) {
     await page.locator("select").selectOption(model);
   }
-  await page.getByRole("button", { name: "Add AI Player" }).click();
+  await page.getByRole("button", { name: "Add" }).click();
 }
 
 export async function startGameWithAi(page: Page): Promise<void> {

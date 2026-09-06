@@ -58,7 +58,7 @@ function createStubClient(): StubClient {
   return { chat: { completions: { create } }, responses, calls };
 }
 
-const OPTIONS = { keepExchanges: 2, model: "test-model", gameCode: "TEST01", playerId: "ai-1" };
+const OPTIONS = { keepExchanges: 2, model: "test-model" };
 
 describe("estimateTokens", () => {
   it("should estimate tokens as ceil(chars / 4)", () => {
@@ -160,7 +160,6 @@ describe("compact", () => {
     const client = createStubClient();
     client.responses.push(new Error("Gateway timeout"));
 
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const result = await compact(conversation, client as unknown as OpenAI, OPTIONS);
 
     expect(result.mode).toBe("fallback");
@@ -170,11 +169,6 @@ describe("compact", () => {
     expect(String(noteMessage.content)).toContain(COMPACTION_NOTE);
     expect(String(noteMessage.content)).toContain("Turn 9 has started");
     expect(result.messages.slice(1)).toHaveLength(10);
-
-    const lines = logSpy.mock.calls.map((c) => JSON.parse(c[0] as string) as Record<string, unknown>);
-    const fallback = lines.find((l) => l.event === "compaction_fallback");
-    expect(fallback).toBeDefined();
-    expect((fallback?.data as { message: string }).message).toBe("Gateway timeout");
   });
 
   it("should not crash on a short conversation over a tiny limit", async () => {

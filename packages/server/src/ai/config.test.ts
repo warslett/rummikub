@@ -18,6 +18,7 @@ describe("aiConfig", () => {
     expect(aiConfig.malformedLimit).toBe(2);
     expect(aiConfig.contextTokenLimit).toBe(100000);
     expect(aiConfig.compactKeepTurns).toBe(6);
+    expect(aiConfig.debug).toBe(false);
   });
 
   it("should return env overrides for provider, baseUrl, apiKey and defaultModel", () => {
@@ -59,6 +60,14 @@ describe("aiConfig", () => {
     expect(aiConfig.malformedLimit).toBe(3);
     expect(aiConfig.contextTokenLimit).toBe(20000);
     expect(aiConfig.compactKeepTurns).toBe(4);
+  });
+
+  it("should return env override for debug", () => {
+    vi.stubEnv("AI_DEBUG", "true");
+    expect(aiConfig.debug).toBe(true);
+
+    vi.stubEnv("AI_DEBUG", "false");
+    expect(aiConfig.debug).toBe(false);
   });
 
   it("should fall back to defaults for invalid robustness knob values", () => {

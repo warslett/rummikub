@@ -18,6 +18,7 @@ services:
       - AI_MALFORMED_LIMIT=${AI_MALFORMED_LIMIT:-2}
       - AI_CONTEXT_TOKEN_LIMIT=${AI_CONTEXT_TOKEN_LIMIT:-100000}
       - AI_COMPACT_KEEP_TURNS=${AI_COMPACT_KEEP_TURNS:-6}
+      - AI_DEBUG=${AI_DEBUG:-false}
 
   client:
     build:

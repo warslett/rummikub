@@ -279,16 +279,12 @@ describe("LlmProvider", () => {
     client.responses.push(
       ...Array.from({ length: 25 }, () => toolCallMessage([{ id: "call-1", name: "get_game_state", arguments: "{}" }]))
     );
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     await expect(
       provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), { turnNumber: 1, eventsNote: "" })
     ).rejects.toThrow(/25/);
 
     expect(client.calls).toHaveLength(25);
-    const lines = logSpy.mock.calls.map((c) => JSON.parse(c[0] as string) as Record<string, unknown>);
-    const errorLine = lines.find((l) => l.event === "error") as { data: { reason?: string } };
-    expect(errorLine.data.reason).toBe("iteration_cap");
   });
 
   it("should retry transient errors with backoff and complete the turn", async () => {
@@ -297,7 +293,6 @@ describe("LlmProvider", () => {
       new RateLimitError(429, {}, "slow down", new Headers()),
       toolCallMessage([{ id: "call-1", name: "draw_tile", arguments: "{}" }])
     );
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     const promise = provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), {
       turnNumber: 1,
@@ -308,12 +303,6 @@ describe("LlmProvider", () => {
 
     expect(client.calls).toHaveLength(2);
     expect(game.getPlayerState(aiPlayerId).isYourTurn).toBe(false);
-    const lines = logSpy.mock.calls.map((c) => JSON.parse(c[0] as string) as Record<string, unknown>);
-    const retry = lines.find((l) => l.event === "retry") as { data: { attempt: number; delayMs: number } };
-    expect(retry).toBeDefined();
-    expect(retry.data.attempt).toBe(1);
-    expect(retry.data.delayMs).toBeGreaterThanOrEqual(1000);
-    expect(retry.data.delayMs).toBeLessThan(2000);
   });
 
   it("should pause after exhausting all retries", async () => {
@@ -325,7 +314,6 @@ describe("LlmProvider", () => {
       new InternalServerError(500, {}, "boom", new Headers()),
       lastError
     );
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     const promise = provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), {
       turnNumber: 1,
@@ -338,18 +326,12 @@ describe("LlmProvider", () => {
     await assertion;
 
     expect(client.calls).toHaveLength(4);
-    const lines = logSpy.mock.calls.map((c) => JSON.parse(c[0] as string) as Record<string, unknown>);
-    const retries = lines.filter((l) => l.event === "retry");
-    expect(retries).toHaveLength(3);
-    const errorLine = lines.find((l) => l.event === "error") as { data: { message: string } };
-    expect(errorLine.data.message).toContain("500");
   });
 
   it("should not retry fatal auth errors", async () => {
     vi.useFakeTimers();
     const authError = new Error("401 Invalid API key");
     client.responses.push(authError);
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     const promise = provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), {
       turnNumber: 1,
@@ -360,8 +342,6 @@ describe("LlmProvider", () => {
     await assertion;
 
     expect(client.calls).toHaveLength(1);
-    const lines = logSpy.mock.calls.map((c) => JSON.parse(c[0] as string) as Record<string, unknown>);
-    expect(lines.filter((l) => l.event === "retry")).toHaveLength(0);
   });
 
   it("should throw with reason malformed after two all-malformed completions", async () => {
@@ -369,16 +349,12 @@ describe("LlmProvider", () => {
       toolCallMessage([{ id: "call-1", name: "explode_game", arguments: "{}" }]),
       toolCallMessage([{ id: "call-2", name: "explode_game", arguments: "{}" }])
     );
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     await expect(
       provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), { turnNumber: 1, eventsNote: "" })
     ).rejects.toThrow(/malformed/i);
 
     expect(client.calls).toHaveLength(2);
-    const lines = logSpy.mock.calls.map((c) => JSON.parse(c[0] as string) as Record<string, unknown>);
-    const errorLine = lines.find((l) => l.event === "error") as { data: { reason?: string } };
-    expect(errorLine.data.reason).toBe("malformed");
   });
 
   it("should reset the malformed streak on a successful completion", async () => {
@@ -399,7 +375,6 @@ describe("LlmProvider", () => {
   it("should compact the conversation before the turn when over the token limit", async () => {
     vi.stubEnv("AI_CONTEXT_TOKEN_LIMIT", "50");
     vi.stubEnv("AI_COMPACT_KEEP_TURNS", "1");
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     client.responses.push(
       toolCallMessage([{ id: "call-1", name: "draw_tile", arguments: "{}" }]),
       toolCallMessage([{ id: "call-2", name: "draw_tile", arguments: "{}" }]),
@@ -432,15 +407,6 @@ describe("LlmProvider", () => {
     const summaryMsg = turn3Messages.find((m) => String(m.content).includes("[Summary of earlier conversation]"));
     expect(summaryMsg).toBeDefined();
     expect(String(turn3Messages[turn3Messages.length - 1].content)).toContain("Turn 3");
-
-    const lines = logSpy.mock.calls.map((c) => JSON.parse(c[0] as string) as Record<string, unknown>);
-    const compactions = lines.filter((l) => l.event === "compaction") as {
-      data: { beforeTokens: number; afterTokens: number; mode: string };
-    }[];
-    expect(compactions.length).toBeGreaterThanOrEqual(1);
-    const realCompaction = compactions.find((c) => c.data.afterTokens < c.data.beforeTokens);
-    expect(realCompaction).toBeDefined();
-    expect(realCompaction?.data.mode).toBe("summary");
   });
 
   it("should persist the conversation across turns and reset it on resetConversations", async () => {
@@ -516,20 +482,17 @@ describe("LlmProvider", () => {
 
   it("should fail fast with a clear error when AI_API_KEY is missing", async () => {
     vi.stubEnv("AI_API_KEY", "");
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const keylessProvider = new LlmProvider();
 
     await expect(
       keylessProvider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), { turnNumber: 1, eventsNote: "" })
     ).rejects.toThrow(/AI_API_KEY/);
 
-    const errorLine = logSpy.mock.calls.map((c) => JSON.parse(c[0] as string)).find((l) => l.event === "error");
-    expect(errorLine).toBeDefined();
-    expect(errorLine.data.message).toMatch(/AI_API_KEY/);
     expect(client.chat.completions.create).not.toHaveBeenCalled();
   });
 
-  it("should log the full turn as JSON lines with correlation fields", async () => {
+  it("should log input and output events as JSON lines with correlation fields", async () => {
+    vi.stubEnv("AI_DEBUG", "true");
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     client.responses.push(
       toolCallMessage([
@@ -546,49 +509,54 @@ describe("LlmProvider", () => {
 
     const lines = logSpy.mock.calls.map((c) => JSON.parse(c[0] as string) as Record<string, unknown>);
     const events = lines.map((l) => l.event as string);
-    expect(events).toEqual([
-      "system_prompt",
-      "request",
-      "response",
-      "tool_call",
-      "tool_result",
-      "request",
-      "response",
-      "tool_call",
-      "tool_result",
-      "turn_complete",
-    ]);
+    expect(events).toEqual(["request", "response", "request", "response"]);
     for (const line of lines) {
       expect(line.gameCode).toBe("TEST01");
       expect(line.playerId).toBe(aiPlayerId);
       expect(line.model).toBe("test-model");
       expect(line.ts).toEqual(expect.any(String));
     }
-    const toolResult = lines.find((l) => l.event === "tool_result") as {
-      data: { ok: boolean; error: string; result: { ok: boolean; error: string } };
-    };
-    expect(toolResult.data.ok).toBe(false);
-    expect(toolResult.data.error).toBe("Tile not in player's rack");
-    expect(toolResult.data.result).toEqual({ ok: false, error: "Tile not in player's rack" });
-    const turnComplete = lines.find((l) => l.event === "turn_complete") as { data: { iterations: number } };
-    expect(turnComplete.data.iterations).toBe(2);
+    const firstRequest = lines[0].data as { iteration: number; messages: { role: string }[] };
+    expect(firstRequest.iteration).toBe(1);
+    expect(firstRequest.messages[0].role).toBe("system");
+    expect(firstRequest.messages[firstRequest.messages.length - 1].role).toBe("user");
+    const secondRequest = lines[2].data as { messages: { role: string }[] };
+    expect(secondRequest.messages.some((m) => m.role === "tool")).toBe(true);
   });
 
-  it("should log the state payload of successful tool results", async () => {
+  it("should not log anything when AI_DEBUG is off", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     client.responses.push(toolCallMessage([{ id: "call-1", name: "draw_tile", arguments: "{}" }]));
 
     await provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), { turnNumber: 1, eventsNote: "" });
 
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  it("should log the model reasoning content as a reasoning event", async () => {
+    vi.stubEnv("AI_DEBUG", "true");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    client.responses.push(
+      {
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: "I will draw a tile.",
+              reasoning_content: "The rack has 7, 8, 9 red; drawing is safe.",
+              tool_calls: [{ id: "call-1", type: "function", function: { name: "draw_tile", arguments: "{}" } }],
+            },
+          },
+        ],
+      }
+    );
+
+    await provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), { turnNumber: 1, eventsNote: "" });
+
     const lines = logSpy.mock.calls.map((c) => JSON.parse(c[0] as string) as Record<string, unknown>);
-    const toolResult = lines.find((l) => l.event === "tool_result") as {
-      data: { name: string; ok: boolean; result: { ok: boolean; state: { poolSize: number; rack: { id: string }[] } } };
-    };
-    expect(toolResult.data.name).toBe("draw_tile");
-    expect(toolResult.data.ok).toBe(true);
-    expect(toolResult.data.result.ok).toBe(true);
-    expect(toolResult.data.result.state.poolSize).toBe(0);
-    expect(toolResult.data.result.state.rack.map((t) => t.id)).toContain("blue-2-a");
+    const reasoning = lines.find((l) => l.event === "reasoning") as { data: { content: string } };
+    expect(reasoning).toBeDefined();
+    expect(reasoning.data.content).toContain("drawing is safe");
   });
 
   describe("purgeGame", () => {

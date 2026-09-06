@@ -17,6 +17,11 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toMatch(/at least one .* rack/i);
   });
 
+  it("should explain that the board cannot be manipulated before the initial meld", () => {
+    expect(prompt).toMatch(/cannot manipulate the board/i);
+    expect(prompt).toMatch(/initial meld/i);
+  });
+
   it("should include the turn protocol with the turn-ending tools", () => {
     expect(prompt).toContain("get_game_state");
     expect(prompt).toContain("draw_tile");
@@ -39,8 +44,8 @@ describe("buildTurnStartMessage", () => {
   });
 
   it("should format the events note into the message", () => {
-    const message = buildTurnStartMessage(3, "Alice drew a tile; Bob played a 3-tile set");
-    expect(message).toContain("Alice drew a tile; Bob played a 3-tile set");
+    const message = buildTurnStartMessage(3, "Alice drew a tile; Bob made changes to the board and ended his turn");
+    expect(message).toContain("Alice drew a tile; Bob made changes to the board and ended his turn");
   });
 
   it("should note when there are no new events", () => {

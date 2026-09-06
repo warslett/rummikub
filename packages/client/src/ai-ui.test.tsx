@@ -121,9 +121,32 @@ describe("AI UI components", () => {
         aiModels: { models: ["gpt-4", "claude-3"], defaultModel: "gpt-4" },
       });
 
-      expect(html).toContain("Add AI Player");
       expect(html).toContain("gpt-4");
       expect(html).toContain("claude-3");
+      expect(html).toContain(">Add</button>");
+      expect(html).not.toContain("Add AI Player");
+    });
+
+    it("should render an AI player name input", () => {
+      const html = renderWithContext(<Lobby />, {
+        playerId: "p1",
+        gameCode: "TEST01",
+        lobbyPlayers: [{ id: "p1", name: "Alice", isAI: false }],
+        aiModels: { models: ["gpt-4"], defaultModel: "gpt-4" },
+      });
+
+      expect(html).toContain("AI Player Name");
+    });
+
+    it("should render Add AI Player button on a single line with the dropdown", () => {
+      const html = renderWithContext(<Lobby />, {
+        playerId: "p1",
+        gameCode: "TEST01",
+        lobbyPlayers: [{ id: "p1", name: "Alice", isAI: false }],
+        aiModels: { models: ["gpt-4"], defaultModel: "gpt-4" },
+      });
+
+      expect(html).toContain("whitespace-nowrap");
     });
 
     it("should select first model when defaultModel is not in models list", () => {

@@ -12,6 +12,7 @@ export function Lobby() {
   const [hasJoined, setHasJoined] = useState(playerId !== null && contextGameCode === gameCode);
   const [copied, setCopied] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>("");
+  const [aiName, setAiName] = useState("");
 
   const effectiveDefaultModel = aiModels
     ? aiModels.models.includes(aiModels.defaultModel)
@@ -78,7 +79,7 @@ export function Lobby() {
 
   function handleAddAi() {
     const model = selectedModel || effectiveDefaultModel || "scripted-default";
-    socket.emit("ai:add", { model });
+    socket.emit("ai:add", { model, name: aiName.trim() });
   }
 
   function handleRemoveAi(pId: string) {
@@ -173,26 +174,36 @@ export function Lobby() {
         </div>
 
         <div className="border-t border-gray-600 pt-4 space-y-3">
-          <div className="flex gap-2 items-center">
-            <select
-              value={selectedModel || effectiveDefaultModel || ""}
-              onChange={(e) => setSelectedModel(e.target.value)}
+          <div className="space-y-2">
+            <input
+              value={aiName}
+              onChange={(e) => setAiName(e.target.value)}
               disabled={totalPlayers >= MAX_PLAYERS}
-              className="flex-1 px-2.5 py-1.5 bg-gray-700 rounded border border-gray-600 text-sm text-white focus:outline-none disabled:opacity-50"
-            >
-              {(aiModels?.models ?? (aiModels?.defaultModel ? [aiModels.defaultModel] : ["scripted-default"])).map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={handleAddAi}
-              disabled={totalPlayers >= MAX_PLAYERS}
-              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm font-semibold"
-            >
-              Add AI Player
-            </button>
+              placeholder="AI Player Name"
+              className="w-full px-3 py-1.5 bg-gray-700 rounded border border-gray-600 text-sm text-white focus:outline-none disabled:opacity-50"
+            />
+            <div className="flex gap-2 items-center">
+              <select
+                value={selectedModel || effectiveDefaultModel || ""}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                disabled={totalPlayers >= MAX_PLAYERS}
+                className="flex-1 px-2.5 py-1.5 bg-gray-700 rounded border border-gray-600 text-sm text-white focus:outline-none disabled:opacity-50"
+              >
+                {(aiModels?.models ?? (aiModels?.defaultModel ? [aiModels.defaultModel] : ["scripted-default"])).map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={handleAddAi}
+                disabled={totalPlayers >= MAX_PLAYERS}
+                title="Add AI player"
+                className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm font-semibold whitespace-nowrap shrink-0"
+              >
+                Add
+              </button>
+            </div>
           </div>
 
           <div className="space-y-2">

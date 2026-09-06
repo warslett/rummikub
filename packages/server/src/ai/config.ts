@@ -10,6 +10,7 @@ export interface AiConfig {
   malformedLimit: number;
   contextTokenLimit: number;
   compactKeepTurns: number;
+  debug: boolean;
 }
 
 function positiveInt(value: string | undefined, fallback: number): number {
@@ -55,5 +56,8 @@ export const aiConfig: Readonly<AiConfig> = Object.freeze({
   },
   get compactKeepTurns(): number {
     return nonNegativeInt(process.env.AI_COMPACT_KEEP_TURNS, 6);
+  },
+  get debug(): boolean {
+    return process.env.AI_DEBUG === "true";
   },
 });

@@ -301,7 +301,7 @@ export function registerHandlers(io: SocketIOServer): void {
       emitPlayerStates(io, game, gameCode);
     });
 
-    socket.on("ai:add", (payload?: { model?: string }) => {
+    socket.on("ai:add", (payload?: { model?: string; name?: string }) => {
       if (data.isSpectator) return;
       if (!payload || typeof payload.model !== "string" || !payload.model.trim()) {
         socket.emit("move:rejected", { reason: "Model is required" });
@@ -314,8 +314,10 @@ export function registerHandlers(io: SocketIOServer): void {
         return;
       }
 
+      const name = typeof payload.name === "string" ? payload.name.trim() : "";
+
       try {
-        game.addAiPlayer(payload.model.trim());
+        game.addAiPlayer(payload.model.trim(), name);
       } catch (err) {
         socket.emit("move:rejected", { reason: (err as Error).message });
         return;

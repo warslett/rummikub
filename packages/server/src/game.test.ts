@@ -1394,6 +1394,23 @@ describe("Game", () => {
       expect(fresh.getState().players).toHaveLength(2);
     });
 
+    it("should allow a custom name for an AI player", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      const aiPlayer = fresh.addAiPlayer("gpt-4", "My Bot");
+
+      expect(aiPlayer.name).toBe("My Bot");
+      expect(aiPlayer.model).toBe("gpt-4");
+    });
+
+    it("should fall back to default AI name when custom name is empty", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      const aiPlayer = fresh.addAiPlayer("gpt-4", "   ");
+
+      expect(aiPlayer.name).toBe("AI: gpt-4");
+    });
+
     it("should reject adding AI player when game is full", () => {
       const fresh = new Game("TEST01");
       fresh.addPlayer("p1", "Alice");

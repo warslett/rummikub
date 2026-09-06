@@ -5,7 +5,7 @@ import { aiLog } from "../logger.js";
 import { buildSystemPrompt, buildTurnStartMessage } from "../prompt.js";
 import { executeTool, toolSchemas } from "../tools.js";
 import { withRetries } from "../retry.js";
-import { compact, estimateTokens, needsCompaction } from "../compaction.js";
+import { compact, needsCompaction } from "../compaction.js";
 import type { AiProvider, TurnContext } from "./types.js";
 import type { AiTurnController } from "../controller.js";
 
@@ -28,14 +28,6 @@ export function purgeGame(gameCode: string): void {
     if (key.startsWith(`${gameCode}:`)) {
       conversations.delete(key);
     }
-  }
-}
-
-function parseToolResult(content: string): unknown {
-  try {
-    return JSON.parse(content);
-  } catch {
-    return content;
   }
 }
 
@@ -69,7 +61,6 @@ export class LlmProvider implements AiProvider {
 
     if (!aiConfig.apiKey) {
       const message = "AI_API_KEY is required when AI_PROVIDER=llm";
-      aiLog(gameCode, playerId, model, "error", { message });
       throw new Error(message);
     }
 
@@ -78,18 +69,14 @@ export class LlmProvider implements AiProvider {
     if (!conversation) {
       conversation = [];
       const systemPrompt = buildSystemPrompt(playerName, model);
-      aiLog(gameCode, playerId, model, "system_prompt", { content: systemPrompt });
       conversation.push({ role: "system", content: systemPrompt });
       conversations.set(key, conversation);
     }
 
     if (needsCompaction(conversation, aiConfig.contextTokenLimit)) {
-      const beforeTokens = estimateTokens(conversation);
-      const { messages: compacted, mode } = await compact(conversation, this.client, {
+      const { messages: compacted } = await compact(conversation, this.client, {
         keepExchanges: aiConfig.compactKeepTurns,
         model,
-        gameCode,
-        playerId,
       });
       conversations.set(key, compacted);
       conversation = compacted;
@@ -97,12 +84,6 @@ export class LlmProvider implements AiProvider {
       conversation.push({
         role: "user",
         content: buildTurnStartMessage(context?.turnNumber ?? 1, context?.eventsNote ?? ""),
-      });
-
-      aiLog(gameCode, playerId, model, "compaction", {
-        beforeTokens,
-        afterTokens: estimateTokens(conversation),
-        mode,
       });
     } else {
       conversation.push({
@@ -119,24 +100,24 @@ export class LlmProvider implements AiProvider {
     for (let iteration = 1; iteration <= maxIterations; iteration++) {
       aiLog(gameCode, playerId, model, "request", {
         iteration,
-        messageCount: conversation.length,
-        lastMessage: conversation[conversation.length - 1],
+        messages: conversation,
       });
 
       let message: ChatCompletionMessage | undefined;
       try {
-        message = await this.createCompletion(model, conversation, gameCode, playerId, iteration);
+        message = await this.createCompletion(model, conversation);
       } catch (err) {
-        const messageText = err instanceof Error ? err.message : "Unknown LLM error";
-        aiLog(gameCode, playerId, model, "error", { iteration, message: messageText });
-        throw err instanceof Error ? err : new Error(messageText);
+        throw err instanceof Error ? err : new Error("Unknown LLM error");
       }
 
       if (!message) {
-        aiLog(gameCode, playerId, model, "error", { iteration, message: "LLM response contained no message" });
         throw new Error("LLM response contained no message");
       }
 
+      const reasoning = (message as { reasoning_content?: unknown }).reasoning_content;
+      if (reasoning) {
+        aiLog(gameCode, playerId, model, "reasoning", { iteration, content: reasoning });
+      }
       aiLog(gameCode, playerId, model, "response", { iteration, message });
 
       if (message.tool_calls && message.tool_calls.length > 0) {
@@ -164,16 +145,6 @@ export class LlmProvider implements AiProvider {
           const outcome = executeTool(controller, name, rawArgs);
           actions.push(name);
 
-          aiLog(gameCode, playerId, model, "tool_call", { iteration, name, arguments: rawArgs });
-          aiLog(gameCode, playerId, model, "tool_result", {
-            iteration,
-            name,
-            ok: outcome.ok,
-            error: outcome.error,
-            turnEnded: outcome.turnEnded,
-            result: parseToolResult(outcome.content),
-          });
-
           conversation.push({
             role: "tool",
             tool_call_id: toolCall.id,
@@ -197,13 +168,11 @@ export class LlmProvider implements AiProvider {
           malformedStreak++;
           if (malformedStreak >= aiConfig.malformedLimit) {
             const messageText = `AI produced only malformed tool calls for ${aiConfig.malformedLimit} consecutive completions`;
-            aiLog(gameCode, playerId, model, "error", { iteration, message: messageText, reason: "malformed" });
             throw new Error(messageText);
           }
         }
 
         if (turnEnded) {
-          aiLog(gameCode, playerId, model, "turn_complete", { iterations: iteration, actions });
           return;
         }
         continue;
@@ -216,25 +185,15 @@ export class LlmProvider implements AiProvider {
         continue;
       }
 
-      aiLog(gameCode, playerId, model, "error", {
-        message: "Model replied with plain text instead of a tool call twice",
-      });
       throw new Error("AI produced no tool call");
     }
 
-    aiLog(gameCode, playerId, model, "error", {
-      message: `Model did not end its turn within ${maxIterations} iterations`,
-      reason: "iteration_cap",
-    });
     throw new Error(`AI did not end its turn within ${maxIterations} iterations`);
   }
 
   private async createCompletion(
     model: string,
-    messages: ChatCompletionMessageParam[],
-    gameCode: string,
-    playerId: string,
-    iteration: number
+    messages: ChatCompletionMessageParam[]
   ): Promise<ChatCompletionMessage | undefined> {
     const completion = await withRetries(
       () =>
@@ -244,15 +203,7 @@ export class LlmProvider implements AiProvider {
           tools: toolSchemas,
           stream: false,
         }),
-      { maxRetries: aiConfig.maxRetries, baseMs: aiConfig.retryBaseMs },
-      (attempt, delayMs, error) => {
-        aiLog(gameCode, playerId, model, "retry", {
-          attempt,
-          delayMs,
-          error: error instanceof Error ? error.message : String(error),
-          iteration,
-        });
-      }
+      { maxRetries: aiConfig.maxRetries, baseMs: aiConfig.retryBaseMs }
     );
     return completion.choices[0]?.message;
   }

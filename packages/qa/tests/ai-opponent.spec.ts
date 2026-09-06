@@ -21,7 +21,7 @@ test.describe("AI Player Infrastructure", () => {
     const page = await ctx.newPage();
 
     const gameCode = await createGame(page, "Alice");
-    await expect(page.getByRole("button", { name: "Add AI Player" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add" })).toBeVisible();
 
     await addAiPlayer(page);
 
@@ -111,7 +111,7 @@ test.describe("AI Player Infrastructure", () => {
     await addAiPlayer(page);
 
     await expect(page.getByText("4/4 players")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Add AI Player" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Add" })).toBeDisabled();
 
     await ctx.close();
   });

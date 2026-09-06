@@ -44,6 +44,7 @@ function observe(game: Game): TurnObservation {
 function diffEvents(previous: TurnObservation, state: GameState, currentPlayerId: string): string[] {
   const events: string[] = [];
   const unchanged: string[] = [];
+  let boardChangedByPlay = false;
   for (const player of state.players) {
     if (player.id === currentPlayerId) {
       continue;
@@ -56,7 +57,8 @@ function diffEvents(previous: TurnObservation, state: GameState, currentPlayerId
     if (delta > 0) {
       events.push(`${player.name} drew a tile`);
     } else if (delta < 0) {
-      events.push(`${player.name} played a ${-delta}-tile set`);
+      events.push(`${player.name} made changes to the board and ended his turn`);
+      boardChangedByPlay = true;
     } else {
       unchanged.push(player.name);
     }
@@ -67,7 +69,7 @@ function diffEvents(previous: TurnObservation, state: GameState, currentPlayerId
     );
   }
   const boardTileCount = state.board.reduce((sum, set) => sum + set.tiles.length, 0);
-  if (boardTileCount !== previous.boardTileCount) {
+  if (boardTileCount !== previous.boardTileCount && !boardChangedByPlay) {
     events.push("the board changed");
   }
   return events;

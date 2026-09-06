@@ -319,6 +319,52 @@ describe("AiTurnRunner", () => {
       getProviderSpy.mockRestore();
     });
 
+    it("should describe an opponent's play as board changes rather than a tile count", async () => {
+      game.addPlayer("p1", "Alice");
+      const ai = game.addAiPlayer("test-model");
+      game.start();
+      game.seedGame({
+        board: [],
+        racks: {
+          p1: [
+            { id: "red-10-a", color: "red", value: 10 },
+            { id: "red-11-a", color: "red", value: 11 },
+            { id: "red-12-a", color: "red", value: 12 },
+          ],
+          [ai.id]: [],
+        },
+        pool: [
+          { id: "red-1-a", color: "red", value: 1 },
+          { id: "red-2-a", color: "red", value: 2 },
+        ],
+        currentTurnPlayerId: ai.id,
+        hasInitialMeld: { p1: true, [ai.id]: true },
+      });
+
+      const contexts: (TurnContext | undefined)[] = [];
+      const stubProvider = createContextCapturingProvider(contexts);
+      const getProviderSpy = vi.spyOn(providersModule, "getProvider").mockReturnValue(stubProvider);
+
+      await maybeRunNextTurn(io, game, "TEST01");
+      game.playSets("p1", [
+        {
+          id: "s1",
+          tiles: [
+            { id: "red-10-a", color: "red", value: 10 },
+            { id: "red-11-a", color: "red", value: 11 },
+            { id: "red-12-a", color: "red", value: 12 },
+          ],
+        },
+      ]);
+      game.endTurn("p1");
+      await maybeRunNextTurn(io, game, "TEST01");
+
+      expect(contexts[1]?.eventsNote).toContain("Alice made changes to the board and ended his turn");
+      expect(contexts[1]?.eventsNote).not.toContain("tile set");
+
+      getProviderSpy.mockRestore();
+    });
+
     it("should note board changes even when rack sizes are unchanged", async () => {
       game.addPlayer("p1", "Alice");
       const ai = game.addAiPlayer("test-model");

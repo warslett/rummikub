@@ -79,7 +79,7 @@ export class Game {
     });
   }
 
-  addAiPlayer(model: string): Player {
+  addAiPlayer(model: string, name?: string): Player {
     if (this.state.phase !== "lobby") {
       throw new Error("Cannot add players after game has started");
     }
@@ -89,7 +89,7 @@ export class Game {
     const playerId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const aiPlayer: Player = {
       id: playerId,
-      name: `AI: ${model}`,
+      name: name?.trim() ? name.trim() : `AI: ${model}`,
       rack: [],
       hasInitialMeld: false,
       score: 0,

@@ -4,12 +4,22 @@ import { aiLog } from "./logger.js";
 describe("aiLog", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
-  it("should log a JSON line with ts, gameCode, playerId, model, event and data", () => {
+  it("should not log anything when AI_DEBUG is off (default)", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    aiLog("ABC123", "ai-1", "test-model", "tool_call", { name: "draw_tile" });
+    aiLog("ABC123", "ai-1", "test-model", "request", { messageCount: 2 });
+
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  it("should log a JSON line with ts, gameCode, playerId, model, event and data when AI_DEBUG is on", () => {
+    vi.stubEnv("AI_DEBUG", "true");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    aiLog("ABC123", "ai-1", "test-model", "request", { messageCount: 2 });
 
     expect(logSpy).toHaveBeenCalledTimes(1);
     const line = logSpy.mock.calls[0][0] as string;
@@ -20,11 +30,12 @@ describe("aiLog", () => {
     expect(parsed.gameCode).toBe("ABC123");
     expect(parsed.playerId).toBe("ai-1");
     expect(parsed.model).toBe("test-model");
-    expect(parsed.event).toBe("tool_call");
-    expect(parsed.data).toEqual({ name: "draw_tile" });
+    expect(parsed.event).toBe("request");
+    expect(parsed.data).toEqual({ messageCount: 2 });
   });
 
   it("should keep correlation fields stable across events", () => {
+    vi.stubEnv("AI_DEBUG", "true");
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     aiLog("XYZ789", "ai-2", "m", "request", { messageCount: 2 });
@@ -37,5 +48,17 @@ describe("aiLog", () => {
     expect(first.model).toBe(second.model);
     expect(first.event).toBe("request");
     expect(second.event).toBe("response");
+  });
+
+  it("should support the reasoning event for chain-of-thought", () => {
+    vi.stubEnv("AI_DEBUG", "true");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    aiLog("XYZ789", "ai-2", "m", "reasoning", { content: "think step by step" });
+
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    const parsed = JSON.parse(logSpy.mock.calls[0][0] as string);
+    expect(parsed.event).toBe("reasoning");
+    expect(parsed.data).toEqual({ content: "think step by step" });
   });
 });

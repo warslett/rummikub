@@ -101,6 +101,20 @@ describe("Socket Handlers AI Integration", () => {
     expect(lastLobby.players[1].name).toBe("AI: gpt-4");
   });
 
+  it("should handle ai:add with a custom name and broadcast lobbyState", () => {
+    socket.callbacks["game:create"]({ playerName: "Alice" });
+    const createEvt = socket.emitted.find((e) => e.event === "game:created");
+    const gameCode = (createEvt?.data as { gameCode: string }).gameCode;
+
+    socket.callbacks["ai:add"]({ model: "gpt-4", name: "My Bot" });
+
+    const lobbyEvts = io._emittedRoom.filter(
+      (e) => e.room === gameCode && e.event === "game:lobbyState"
+    );
+    const lastLobby = lobbyEvts[lobbyEvts.length - 1]?.data as GameLobbyStatePayload;
+    expect(lastLobby.players[1].name).toBe("My Bot");
+  });
+
   it("should reject ai:add if lobby is full", () => {
     socket.callbacks["game:create"]({ playerName: "Alice" });
     socket.callbacks["ai:add"]({ model: "m1" });
