@@ -82,7 +82,7 @@ docs/              — Project documentation
 | `AI_MALFORMED_LIMIT` | `2` | Consecutive completions containing only malformed tool calls (unknown tool, unparseable/non-object arguments) before the game pauses (`reason: "malformed"`). A successful tool call resets the streak. Set to `0` to pause on the first such completion |
 | `AI_CONTEXT_TOKEN_LIMIT` | `100000` | Estimated token budget for the AI conversation (chars/4 heuristic). When exceeded, the conversation is compacted before the next turn: older exchanges are folded into a summary and the last `AI_COMPACT_KEEP_TURNS` exchanges are kept |
 | `AI_COMPACT_KEEP_TURNS` | `6` | Number of most recent turn exchanges kept verbatim after compaction |
-| `AI_DEBUG` | `false` | When `true`, the `llm` provider logs the AI's debug output to the server console as JSON lines (request input, model chain-of-thought, and model response). Off by default |
+| `AI_DEBUG` | `false` | When `true`, enables the AI debug console in the game UI: AI players in the top strip become clickable and open a panel showing that AI's rack and a readable session transcript (Prompt, Thinking, Tool call, Response). Also gates transcript recording/broadcasting on the server. Off by default |
 
 ## Playing against AI models
 
@@ -98,16 +98,11 @@ docker compose -f docker-compose.dev.yml up
 
 Then create a game, add an AI player in the lobby (pick a model from the list), and start. The AI takes its turns through a tool-calling agent loop: it receives the rules and its private state in a system prompt, and plays by calling the same verbs a human has (`get_game_state`, `play_sets`, `manipulate_board`, `undo_turn`, `draw_tile`, `end_turn`, `pass_turn`). Invalid moves are rejected with the same messages a human would see, returned as tool results so the model can retry. The conversation persists across the AI's turns within a round and is reset on Play Again.
 
-### Watching the AI's logs
+Requests sent to the gateway identify the app with a `User-Agent: rummikub-ai/1.0` header and carry a stable `x-opencode-session` per AI conversation (one per game round and player). OpenCode Go requires both; other OpenAI-compatible gateways ignore them.
 
-Set `AI_DEBUG=true` to log the AI's debug output to the server console as JSON lines, correlated by `gameCode` and `playerId`. Only three event types are emitted — the input sent to the model (`request`), the model's chain-of-thought (`reasoning`), and the model's output (`response`):
+### Watching the AI's session
 
-```bash
-AI_DEBUG=true docker compose -f docker-compose.dev.yml up
-docker compose -f docker-compose.dev.yml logs -f dev-server | grep '"event"'
-```
-
-Events: `request`, `reasoning`, `response`. If the model or gateway fails, the game pauses and all players see an error banner (`ai:error`).
+Set `AI_DEBUG=true` and click an AI player in the game UI (the top player strip). A debug console opens anchored bottom-right, showing that AI's rack and a readable transcript of its session with the model — Prompt items (system prompt, turn-start notes, corrective prompts), Thinking items (chain-of-thought, when the model provides it), Tool call items (tool name only) and Response items. The transcript scrolls back to the start of the round and streams live; spectators get the same console. No server logs are involved. If the model or gateway fails, the game pauses and all players see an error banner (`ai:error`).
 
 ### Tuning AI robustness
 

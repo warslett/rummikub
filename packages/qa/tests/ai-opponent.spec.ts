@@ -364,4 +364,217 @@ test.describe("AI Player Infrastructure", () => {
 
     await ctx.close();
   });
+
+  test("TC-AI-13: Debug console opens, shows rack + styled transcript, closes", async ({ browser }) => {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+
+    const gameCode = await createGame(page, "Alice");
+    await addAiPlayer(page);
+    await startGameWithAi(page);
+
+    // If Alice is first, draw so the AI takes a turn
+    const yourTurnVisible = await page.getByText(/Your turn/i).first().isVisible().catch(() => false);
+    if (yourTurnVisible) {
+      await page.getByRole("button", { name: "Draw Tile" }).click();
+    }
+    await expect(page.getByText(/Your turn/i).first()).toBeVisible({ timeout: 10000 });
+
+    // Click the AI player in the top strip
+    await page.getByTestId("ai-debug-player").click();
+
+    const consolePanel = page.getByTestId("ai-debug-console");
+    await expect(consolePanel).toBeVisible();
+
+    // Anchored bottom right (fixed panel)
+    await expect(consolePanel).toHaveClass(/fixed/);
+    await expect(consolePanel).toHaveClass(/sm:right-4/);
+
+    // Rack tiles are visible
+    await expect(
+      consolePanel.getByLabel(/^(red|blue|orange|black) \d+$|^Joker$/).first()
+    ).toBeVisible();
+
+    // Transcript contains at least one Prompt and one Tool call item
+    const transcriptItems = consolePanel.locator("[data-item-type]");
+    await expect(transcriptItems).not.toHaveCount(0);
+    await expect(consolePanel.locator('[data-item-type="prompt"]').first()).toBeVisible();
+    await expect(consolePanel.locator('[data-item-type="tool_call"]').first()).toBeVisible();
+    await expect(consolePanel.locator('[data-item-type="tool_call"]').first()).toContainText(
+      /Tool call: (play_sets|draw_tile|end_turn|pass_turn|get_game_state|manipulate_board|undo_turn)/
+    );
+
+    // Close button hides the console
+    await consolePanel.getByRole("button", { name: "Close" }).click();
+    await expect(consolePanel).toBeHidden();
+
+    // Clicking the AI player again reopens it
+    await page.getByTestId("ai-debug-player").click();
+    await expect(consolePanel).toBeVisible();
+
+    await ctx.close();
+  });
+
+  test("TC-AI-14: Transcript history scrolls back to the start of the round", async ({ browser }) => {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+
+    const gameCode = await createGame(page, "Alice");
+    await addAiPlayer(page);
+    await startGameWithAi(page);
+
+    const gameState = await getGameStateFromServer(gameCode);
+    const humanPlayer = gameState.players.find((p: { isAI?: boolean }) => !p.isAI);
+    const aiPlayer = gameState.players.find((p: { isAI?: boolean }) => p.isAI);
+
+    const pool = Array.from({ length: 30 }, (_, i) => ({
+      id: `blue-${i + 1}-a`,
+      color: "blue",
+      value: (i % 13) + 1,
+    }));
+
+    // Seeded drawTile script: the AI draws on every one of its turns
+    await seedGameServer(gameCode, {
+      board: [],
+      racks: {
+        [humanPlayer.id]: [{ id: "red-1-a", color: "red", value: 1 }],
+        [aiPlayer.id]: [{ id: "red-2-a", color: "red", value: 2 }],
+      },
+      pool,
+      currentTurnPlayerId: aiPlayer.id,
+      hasInitialMeld: {
+        [humanPlayer.id]: true,
+        [aiPlayer.id]: true,
+      },
+      aiScripts: {
+        [aiPlayer.id]: [{ action: "drawTile" }],
+      },
+    });
+
+    // AI turn 1 runs on seed; wait for Alice's turn
+    await expect(page.getByText(/Your turn/i).first()).toBeVisible({ timeout: 10000 });
+
+    // Two more AI turns (turn 2 and turn 3)
+    await page.getByRole("button", { name: "Draw Tile" }).click();
+    await expect(page.getByText(/Your turn/i).first()).toBeVisible({ timeout: 10000 });
+    await page.getByRole("button", { name: "Draw Tile" }).click();
+    await expect(page.getByText(/Your turn/i).first()).toBeVisible({ timeout: 10000 });
+
+    // Open the console
+    await page.getByTestId("ai-debug-player").click();
+    const consolePanel = page.getByTestId("ai-debug-console");
+    await expect(consolePanel).toBeVisible();
+
+    const transcriptItems = consolePanel.locator("[data-item-type]");
+
+    // Three AI turns: prompt + tool call per turn, in order
+    await expect(transcriptItems).toHaveCount(6, { timeout: 10000 });
+    const types = await transcriptItems.evaluateAll((items) =>
+      items.map((item) => (item as HTMLElement).dataset.itemType)
+    );
+    expect(types).toEqual(["prompt", "tool_call", "prompt", "tool_call", "prompt", "tool_call"]);
+
+    const prompts = consolePanel.locator('[data-item-type="prompt"]');
+    await expect(prompts.nth(0)).toContainText("Turn 1");
+    await expect(prompts.nth(1)).toContainText("Turn 2");
+    await expect(prompts.nth(2)).toContainText("Turn 3");
+
+    const transcript = page.getByTestId("ai-debug-transcript");
+
+    // The transcript overflows its container so scroll behaviour is meaningful
+    const overflows = await transcript.evaluate((el) => el.scrollHeight > el.clientHeight);
+    expect(overflows).toBe(true);
+
+    // Auto-scroll: opening the console leaves the view pinned at the bottom
+    const atBottom = await transcript.evaluate((el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 8);
+    expect(atBottom).toBe(true);
+
+    // Scroll the transcript to the top: the first item of the round is the initial Prompt
+    await transcript.evaluate((el) => {
+      el.scrollTop = 0;
+    });
+    await expect(transcriptItems.first()).toHaveAttribute("data-item-type", "prompt");
+    await expect(transcriptItems.first()).toContainText("Turn 1");
+
+    // Live items append while the console is open during a subsequent AI turn
+    await page.getByRole("button", { name: "Draw Tile" }).click();
+    await expect(transcriptItems).toHaveCount(8, { timeout: 10000 });
+    await expect(transcriptItems.last()).toHaveAttribute("data-item-type", "tool_call");
+
+    // Scroll pinning: the view stays where the user scrolled while live items arrive
+    const pinnedScrollTop = await transcript.evaluate((el) => el.scrollTop);
+    expect(pinnedScrollTop).toBe(0);
+
+    await ctx.close();
+  });
+
+  test("TC-AI-15: Debug console switches between AI players", async ({ browser }) => {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+
+    const gameCode = await createGame(page, "Alice");
+    await addAiPlayer(page, undefined, "Bot One");
+    await addAiPlayer(page, undefined, "Bot Two");
+    await startGameWithAi(page);
+
+    const gameState = await getGameStateFromServer(gameCode);
+    const humanPlayer = gameState.players.find((p: { isAI?: boolean }) => !p.isAI);
+    const aiPlayers = gameState.players.filter((p: { isAI?: boolean }) => p.isAI);
+    const ai1 = aiPlayers[0];
+    const ai2 = aiPlayers[1];
+
+    const meldSet = {
+      id: "set-1",
+      tiles: [
+        { id: "red-7-a", color: "red", value: 7 },
+        { id: "red-8-a", color: "red", value: 8 },
+        { id: "red-9-a", color: "red", value: 9 },
+      ],
+    };
+
+    // ai1 plays a meld and ends its turn; ai2 draws on its own turn
+    await seedGameServer(gameCode, {
+      board: [],
+      racks: {
+        [humanPlayer.id]: [{ id: "blue-1-a", color: "blue", value: 1 }],
+        // Extra tile so ai1 does not empty its rack and win the game
+        [ai1.id]: [...meldSet.tiles, { id: "black-1-a", color: "black", value: 1 }],
+        [ai2.id]: [{ id: "black-2-a", color: "black", value: 2 }],
+      },
+      pool: [{ id: "black-5-a", color: "black", value: 5 }],
+      currentTurnPlayerId: ai1.id,
+      hasInitialMeld: {
+        [humanPlayer.id]: true,
+        [ai1.id]: true,
+        [ai2.id]: true,
+      },
+      aiScripts: {
+        [ai1.id]: [
+          { action: "playSets", sets: [meldSet] },
+          { action: "endTurn" },
+        ],
+        [ai2.id]: [{ action: "drawTile" }],
+      },
+    });
+
+    // Both AI turns run; wait until the turn is back to Alice
+    await expect(page.getByText(/Your turn/i).first()).toBeVisible({ timeout: 10000 });
+
+    // Open the console for the first AI: it shows ai1's own transcript
+    await page.getByTestId("ai-debug-player").nth(0).click();
+    const consolePanel = page.getByTestId("ai-debug-console");
+    await expect(consolePanel).toBeVisible();
+    await expect(consolePanel.getByText(ai1.name)).toBeVisible();
+    await expect(consolePanel.locator('[data-item-type="tool_call"]').first()).toContainText("play_sets");
+
+    // Switch to the second AI: the same console shows ai2's transcript, not ai1's
+    await page.getByTestId("ai-debug-player").nth(1).click();
+    await expect(consolePanel.getByText(ai2.name)).toBeVisible();
+    await expect(consolePanel.locator('[data-item-type="tool_call"]').first()).toContainText("draw_tile");
+    await expect(
+      consolePanel.locator('[data-item-type="tool_call"]').filter({ hasText: "play_sets" })
+    ).toHaveCount(0);
+
+    await ctx.close();
+  });
 });

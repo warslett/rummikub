@@ -209,6 +209,7 @@ describe("AI UI components", () => {
         roundNumber: 1,
         yourGamesWon: 0,
         consecutivePasses: 0,
+        aiDebug: false,
         opponents: [{ id: "ai-1", name: "AI: gpt-4", rackSize: 14, score: 0, gamesWon: 0, connected: true, isAI: true, model: "gpt-4" }],
       };
 
@@ -244,6 +245,7 @@ describe("AI UI components", () => {
         ],
         roundNumber: 1,
         consecutivePasses: 0,
+        aiDebug: false,
       };
 
       const html = renderWithContext(<SpectateBoard />, {
@@ -252,6 +254,39 @@ describe("AI UI components", () => {
       });
 
       expect(html).toContain("AI · gpt-4");
+    });
+  });
+
+  describe("AI debug strip clickability", () => {
+    it("should render OpponentInfo as a clickable button when debugClickable is set", () => {
+      const html = renderToString(
+        <OpponentInfo
+          name="AI: gpt-4"
+          rackSize={14}
+          isAI={true}
+          model="gpt-4"
+          debugClickable={true}
+          onDebugClick={() => {}}
+        />
+      );
+      expect(html).toContain('data-testid="ai-debug-player"');
+      expect(html).toContain("cursor-pointer");
+    });
+
+    it("should render OpponentInfo as a plain div when not debug-clickable", () => {
+      const html = renderToString(
+        <OpponentInfo name="AI: gpt-4" rackSize={14} isAI={true} model="gpt-4" />
+      );
+      expect(html).not.toContain('data-testid="ai-debug-player"');
+    });
+
+    it("should keep the OpponentInfo markup unchanged for human opponents", () => {
+      const human = renderToString(<OpponentInfo name="Bob" rackSize={14} isAI={false} />);
+      const ai = renderToString(
+        <OpponentInfo name="AI: gpt-4" rackSize={14} isAI={true} model="gpt-4" />
+      );
+      expect(human).not.toContain("AI ·");
+      expect(ai).toContain("AI · gpt-4");
     });
   });
 });

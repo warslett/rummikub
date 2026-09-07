@@ -1,12 +1,15 @@
 import { useGame } from "../contexts/GameContext";
+import { useAiDebug } from "../contexts/AiDebugContext";
 import { Board, Pool } from "../components/GameBoard";
+import { AiDebugConsole } from "../components/AiDebugConsole";
 
 export function SpectateBoard() {
   const { spectatorState } = useGame();
+  const { openConsole, openPlayerId } = useAiDebug();
 
   if (!spectatorState) return null;
 
-  const { board, poolSize, currentTurnPlayerId, players, roundNumber, consecutivePasses } = spectatorState;
+  const { board, poolSize, currentTurnPlayerId, players, roundNumber, consecutivePasses, aiDebug } = spectatorState;
   const currentPlayer = players.find((p) => p.id === currentTurnPlayerId);
 
   const anyDisconnected = players.some((p) => !p.connected);
@@ -25,19 +28,41 @@ export function SpectateBoard() {
 
       <div className="flex justify-between items-center">
         <div className="flex gap-4">
-          {players.map((p) => (
-            <div key={p.id} className="flex items-center gap-3 px-3 py-2 bg-gray-800 rounded-lg">
-              <div className="flex items-center gap-2">
-                <span className={`text-sm ${!p.connected ? "text-red-400" : "text-gray-400"}`}>{p.name}</span>
-                {p.isAI && (
-                  <span className="px-1.5 py-0.5 text-xs bg-indigo-700 text-indigo-100 rounded font-semibold">
-                    {p.model ? `AI · ${p.model}` : "AI"}
-                  </span>
-                )}
+          {players.map((p) => {
+            const content = (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className={`text-sm ${!p.connected ? "text-red-400" : "text-gray-400"}`}>{p.name}</span>
+                  {p.isAI && (
+                    <span className="px-1.5 py-0.5 text-xs bg-indigo-700 text-indigo-100 rounded font-semibold">
+                      {p.model ? `AI · ${p.model}` : "AI"}
+                    </span>
+                  )}
+                </div>
+                {!p.connected && <span className="text-red-400 text-xs">(disconnected)</span>}
+              </>
+            );
+
+            if (aiDebug && p.isAI) {
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  data-testid="ai-debug-player"
+                  onClick={() => openConsole(p.id)}
+                  className="flex items-center gap-3 px-3 py-2 bg-gray-800 rounded-lg cursor-pointer hover:border-amber-400 border border-transparent transition-colors text-left"
+                >
+                  {content}
+                </button>
+              );
+            }
+
+            return (
+              <div key={p.id} className="flex items-center gap-3 px-3 py-2 bg-gray-800 rounded-lg">
+                {content}
               </div>
-              {!p.connected && <span className="text-red-400 text-xs">(disconnected)</span>}
-            </div>
-          ))}
+            );
+          })}
         </div>
         <Pool count={poolSize} />
       </div>
@@ -59,6 +84,16 @@ export function SpectateBoard() {
       <div className="text-center text-gray-500 text-sm">
         {currentPlayer ? `${currentPlayer.name}'s turn` : ""}
       </div>
+
+      {openPlayerId && (() => {
+        const debugPlayer = players.find((p) => p.id === openPlayerId);
+        return (
+          <AiDebugConsole
+            playerName={debugPlayer?.name ?? "AI"}
+            model={debugPlayer?.model}
+          />
+        );
+      })()}
     </div>
   );
 }

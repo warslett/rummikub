@@ -1,9 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Server as SocketIOServer } from "socket.io";
 import { registerHandlers, manager } from "./handlers.js";
 import * as runnerModule from "./ai/runner.js";
 import * as llmModule from "./ai/providers/llm.js";
-import type { GameLobbyStatePayload, AiModelsPayload } from "@rummikub/shared";
+import * as debugModule from "./ai/debug.js";
+import { _clearAllTranscripts } from "./ai/debug.js";
+import type { GameLobbyStatePayload, AiModelsPayload, AiDebugHistoryPayload } from "@rummikub/shared";
 
 interface MockSocket {
   id: string;
@@ -79,10 +81,16 @@ describe("Socket Handlers AI Integration", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    _clearAllTranscripts();
     io = createMockIo();
     registerHandlers(io as unknown as SocketIOServer);
     socket = createMockSocket("sock-1");
     io._connect(socket);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
 
   it("should handle ai:add and broadcast lobbyState with AI player", () => {
@@ -217,6 +225,7 @@ describe("Socket Handlers AI Integration", () => {
     const resetConversationsSpy = vi.spyOn(llmModule, "resetConversations").mockImplementation(() => {});
     const resetTurnContextSpy = vi.spyOn(runnerModule, "resetTurnContext").mockImplementation(() => {});
     const resetAiErrorsSpy = vi.spyOn(runnerModule, "resetAiErrors").mockImplementation(() => {});
+    const resetTranscriptsSpy = vi.spyOn(debugModule, "resetTranscripts").mockImplementation(() => {});
 
     socket.callbacks["game:create"]({ playerName: "Alice" });
     const createEvt = socket.emitted.find((e) => e.event === "game:created");
@@ -230,8 +239,91 @@ describe("Socket Handlers AI Integration", () => {
 
     expect(game.getState().roundNumber).toBe(2);
     expect(resetConversationsSpy).toHaveBeenCalledWith(gameCode, 2);
+    expect(resetTranscriptsSpy).toHaveBeenCalledWith(gameCode, 2);
     expect(resetTurnContextSpy).toHaveBeenCalledWith(gameCode);
     expect(resetAiErrorsSpy).toHaveBeenCalledWith(gameCode);
     expect(runnerSpy).toHaveBeenCalled();
+  });
+
+  describe("ai:debugHistory", () => {
+    function setupAiGameWithTurn() {
+      vi.stubEnv("AI_DEBUG", "true");
+      socket.callbacks["game:create"]({ playerName: "Alice" });
+      const createEvt = socket.emitted.find((e) => e.event === "game:created");
+      const gameCode = (createEvt?.data as { gameCode: string }).gameCode;
+      const game = manager.getGame(gameCode)!;
+      socket.callbacks["ai:add"]({ model: "test-model" });
+      const aiPlayerId = game.getState().players.find((p) => p.isAI)!.id;
+      socket.callbacks["game:start"]({ gameCode });
+
+      socket.callbacks["game:seed"]({
+        gameCode,
+        state: {
+          board: [],
+          racks: {},
+          pool: [{ id: "red-5-a", color: "red", value: 5 }],
+          currentTurnPlayerId: aiPlayerId,
+          hasInitialMeld: {},
+        },
+      });
+      return { gameCode, aiPlayerId };
+    }
+
+    it("should return recorded items and the AI rack to the requesting socket only", () => {
+      const { gameCode, aiPlayerId } = setupAiGameWithTurn();
+      const game = manager.getGame(gameCode)!;
+      const aiPlayer = game.getState().players.find((p) => p.id === aiPlayerId)!;
+
+      socket.callbacks["ai:debugHistory"]({ playerId: aiPlayerId });
+
+      const historyEvt = socket.emitted.find((e) => e.event === "ai:debugHistory");
+      expect(historyEvt).toBeDefined();
+      const payload = historyEvt?.data as AiDebugHistoryPayload;
+      expect(payload.playerId).toBe(aiPlayerId);
+      expect(payload.roundNumber).toBe(1);
+      expect(payload.items.map((i) => i.type)).toEqual(["prompt", "tool_call"]);
+      expect(payload.items[1].text).toBe("draw_tile");
+      expect(payload.rack).toEqual(aiPlayer.rack);
+      expect(
+        io._emittedRoom.filter((e) => e.event === "ai:debugHistory")
+      ).toHaveLength(0);
+    });
+
+    it("should return empty items for an unknown player", () => {
+      setupAiGameWithTurn();
+
+      socket.callbacks["ai:debugHistory"]({ playerId: "no-such-player" });
+
+      const historyEvt = socket.emitted.find((e) => e.event === "ai:debugHistory");
+      expect(historyEvt).toBeDefined();
+      const payload = historyEvt?.data as AiDebugHistoryPayload;
+      expect(payload.items).toEqual([]);
+      expect(payload.rack).toEqual([]);
+    });
+
+    it("should return empty items for a non-AI player", () => {
+      setupAiGameWithTurn();
+
+      socket.callbacks["ai:debugHistory"]({ playerId: socket.data.playerId as string });
+
+      const historyEvt = socket.emitted.find((e) => e.event === "ai:debugHistory");
+      expect(historyEvt).toBeDefined();
+      const payload = historyEvt?.data as AiDebugHistoryPayload;
+      expect(payload.items).toEqual([]);
+      expect(payload.rack).toEqual([]);
+    });
+
+    it("should return empty items when AI_DEBUG is off", () => {
+      const { aiPlayerId } = setupAiGameWithTurn();
+      vi.stubEnv("AI_DEBUG", "false");
+
+      socket.callbacks["ai:debugHistory"]({ playerId: aiPlayerId });
+
+      const historyEvt = socket.emitted.filter((e) => e.event === "ai:debugHistory");
+      expect(historyEvt).toHaveLength(1);
+      const payload = historyEvt[0].data as AiDebugHistoryPayload;
+      expect(payload.items).toEqual([]);
+      expect(payload.rack).toEqual([]);
+    });
   });
 });

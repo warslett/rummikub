@@ -1,7 +1,8 @@
 import type { Server as SocketIOServer } from "socket.io";
-import type { TileSet, PlayerGameState } from "@rummikub/shared";
+import type { TileSet, PlayerGameState, AiDebugItemType } from "@rummikub/shared";
 import { Game } from "../game.js";
 import { emitPlayerStates, emitGameEnded, emitStalemateEnded } from "../emissions.js";
+import { recordDebugItem } from "./debug.js";
 
 export type ControllerResult =
   | { ok: true; state: PlayerGameState }
@@ -21,6 +22,10 @@ export class AiTurnController {
 
   getPlayerId(): string {
     return this.playerId;
+  }
+
+  recordDebugItem(item: { type: AiDebugItemType; text: string }): void {
+    recordDebugItem(this.io, this.game, this.playerId, item);
   }
 
   getMyState(): { ok: true; state: PlayerGameState } {

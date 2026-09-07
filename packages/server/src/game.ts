@@ -13,6 +13,7 @@ import {
   getBoardValidationErrors,
 } from "@rummikub/shared";
 import type { TileSet, Tile, Player, GameState, GamePhase, PlayerGameState, SpectatorGameState, OpponentInfo, AiScriptAction } from "@rummikub/shared";
+import { aiConfig } from "./ai/config.js";
 
 function isJoker(tile: Tile): boolean {
   return tile.color === JOKER_COLOR;
@@ -533,6 +534,7 @@ export class Game {
       roundNumber: this.state.roundNumber,
       yourGamesWon: player.gamesWon,
       consecutivePasses: this.state.consecutivePasses,
+      aiDebug: aiConfig.debug,
       opponents,
     };
   }
@@ -557,6 +559,7 @@ export class Game {
       })),
       roundNumber: this.state.roundNumber,
       consecutivePasses: this.state.consecutivePasses,
+      aiDebug: aiConfig.debug,
     };
   }
 

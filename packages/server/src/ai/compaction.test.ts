@@ -36,18 +36,29 @@ function buildConversation(turns: number): ChatCompletionMessageParam[] {
   return messages;
 }
 
+interface StubCall {
+  model: string;
+  messages: ChatCompletionMessageParam[];
+  tools: unknown;
+  max_tokens?: number;
+  headers?: Record<string, string>;
+}
+
 interface StubClient {
   chat: { completions: { create: ReturnType<typeof vi.fn> } };
   responses: (Error | Record<string, unknown>)[];
-  calls: { model: string; messages: ChatCompletionMessageParam[]; tools: unknown; max_tokens?: number }[];
+  calls: StubCall[];
 }
 
 function createStubClient(): StubClient {
   const responses: (Error | Record<string, unknown>)[] = [];
-  const calls: { model: string; messages: ChatCompletionMessageParam[]; tools: unknown; max_tokens?: number }[] = [];
+  const calls: StubCall[] = [];
   const create = vi.fn(
-    async (args: { model: string; messages: ChatCompletionMessageParam[]; tools: unknown; max_tokens?: number }) => {
-      calls.push(args);
+    async (
+      args: { model: string; messages: ChatCompletionMessageParam[]; tools: unknown; max_tokens?: number },
+      options?: { headers?: Record<string, string> }
+    ) => {
+      calls.push({ ...args, headers: options?.headers });
       const next = responses.shift();
       if (next instanceof Error) {
         throw next;
@@ -58,7 +69,12 @@ function createStubClient(): StubClient {
   return { chat: { completions: { create } }, responses, calls };
 }
 
-const OPTIONS = { keepExchanges: 2, model: "test-model" };
+const SESSION_HEADERS = {
+  "User-Agent": "rummikub-ai/1.0",
+  "x-opencode-session": "rummikub-TEST01:1:ai-1",
+};
+
+const OPTIONS = { keepExchanges: 2, model: "test-model", headers: SESSION_HEADERS };
 
 describe("estimateTokens", () => {
   it("should estimate tokens as ceil(chars / 4)", () => {
@@ -180,6 +196,19 @@ describe("compact", () => {
     expect(result.messages).toBe(conversation);
     expect(result.mode).toBe("noop");
     expect(client.calls).toHaveLength(0);
+  });
+
+  it("should send the conversation session headers on the summarization request", async () => {
+    const conversation = buildConversation(10);
+    const client = createStubClient();
+    client.responses.push({
+      choices: [{ message: { role: "assistant", content: "The player drew a tile each turn." } }],
+    });
+
+    await compact(conversation, client as unknown as OpenAI, OPTIONS);
+
+    expect(client.calls).toHaveLength(1);
+    expect(client.calls[0].headers).toEqual(SESSION_HEADERS);
   });
 
   it("should never produce consecutive user messages after compaction (gateway role compatibility)", async () => {

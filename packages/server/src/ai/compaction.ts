@@ -59,6 +59,7 @@ function serializeMessages(messages: ChatCompletionMessageParam[]): string {
 export interface CompactOptions {
   keepExchanges: number;
   model: string;
+  headers: Record<string, string>;
 }
 
 export interface CompactResult {
@@ -104,7 +105,7 @@ export async function compact(
   }
 
   try {
-    const summary = await summarize(client, model, older);
+    const summary = await summarize(client, model, older, options.headers);
     const summaryPrefix = `[Summary of earlier conversation]: ${summary}\n\n${COMPACTION_NOTE}`;
     const base: ChatCompletionMessageParam[] = system ? [system] : [];
     return { messages: [...base, ...prefixFirstKept(kept, summaryPrefix)], mode: "summary" };
@@ -117,20 +118,24 @@ export async function compact(
 async function summarize(
   client: OpenAI,
   model: string,
-  older: ChatCompletionMessageParam[]
+  older: ChatCompletionMessageParam[],
+  headers: Record<string, string>
 ): Promise<string> {
   const completion = await withRetries(
     () =>
-      client.chat.completions.create({
-        model,
-        messages: [
-          { role: "system", content: SUMMARIZATION_PROMPT },
-          { role: "user", content: serializeMessages(older) },
-        ],
-        tools: [],
-        max_tokens: 2000,
-        stream: false,
-      }),
+      client.chat.completions.create(
+        {
+          model,
+          messages: [
+            { role: "system", content: SUMMARIZATION_PROMPT },
+            { role: "user", content: serializeMessages(older) },
+          ],
+          tools: [],
+          max_tokens: 2000,
+          stream: false,
+        },
+        { headers }
+      ),
     { maxRetries: aiConfig.maxRetries, baseMs: aiConfig.retryBaseMs }
   );
   const content = completion.choices[0]?.message?.content;

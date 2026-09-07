@@ -81,6 +81,7 @@ export interface PlayerGameState {
   roundNumber: number;
   yourGamesWon: number;
   consecutivePasses: number;
+  aiDebug: boolean;
   opponents: OpponentInfo[];
 }
 
@@ -147,6 +148,7 @@ export interface SpectatorGameState {
   players: { id: string; name: string; score: number; gamesWon: number; connected: boolean; isAI: boolean; model?: string }[];
   roundNumber: number;
   consecutivePasses: number;
+  aiDebug: boolean;
 }
 
 export interface SpectatorJoinedPayload {
@@ -162,6 +164,32 @@ export interface AiErrorPayload {
   playerId: string;
   playerName: string;
   message: string;
+}
+
+export type AiDebugItemType = "prompt" | "thinking" | "tool_call" | "response";
+
+export interface AiDebugItem {
+  type: AiDebugItemType;
+  text: string;
+  ts: string;
+}
+
+export interface AiDebugEventPayload {
+  playerId: string;
+  roundNumber: number;
+  item: AiDebugItem;
+  rack: Tile[];
+}
+
+export interface AiDebugHistoryRequestPayload {
+  playerId: string;
+}
+
+export interface AiDebugHistoryPayload {
+  playerId: string;
+  roundNumber: number;
+  items: AiDebugItem[];
+  rack: Tile[];
 }
 
 export type AiScriptAction =

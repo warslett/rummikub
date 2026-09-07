@@ -48,4 +48,9 @@ export type {
   AiModelsPayload,
   AiErrorPayload,
   AiScriptAction,
+  AiDebugItemType,
+  AiDebugItem,
+  AiDebugEventPayload,
+  AiDebugHistoryRequestPayload,
+  AiDebugHistoryPayload,
 } from "./types.js";

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { Game } from "./game";
 import { INITIAL_HAND_SIZE, INITIAL_MELD_MINIMUM, TOTAL_TILES, JOKER_PENALTY } from "@rummikub/shared";
 import type { Tile, TileSet } from "@rummikub/shared";
@@ -28,6 +28,10 @@ describe("Game", () => {
     game = new Game("TEST01");
     game.addPlayer("p1", "Alice");
     game.addPlayer("p2", "Bob");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   describe("constructor", () => {
@@ -618,6 +622,19 @@ describe("Game", () => {
       game.start();
       const state = game.getPlayerState("p1");
       expect(state.roundNumber).toBe(1);
+    });
+
+    it("should set aiDebug to false when AI_DEBUG is off (default)", () => {
+      game.start();
+      const state = game.getPlayerState("p1");
+      expect(state.aiDebug).toBe(false);
+    });
+
+    it("should set aiDebug to true when AI_DEBUG is on", () => {
+      vi.stubEnv("AI_DEBUG", "true");
+      game.start();
+      const state = game.getPlayerState("p1");
+      expect(state.aiDebug).toBe(true);
     });
 
     it("should include gamesWon", () => {
@@ -1358,6 +1375,17 @@ describe("Game", () => {
       const state = game.getSpectatorState();
       const p1 = state.players.find((p) => p.id === "p1")!;
       expect(p1.connected).toBe(true);
+    });
+
+    it("should set aiDebug to false when AI_DEBUG is off (default)", () => {
+      const state = game.getSpectatorState();
+      expect(state.aiDebug).toBe(false);
+    });
+
+    it("should set aiDebug to true when AI_DEBUG is on", () => {
+      vi.stubEnv("AI_DEBUG", "true");
+      const state = game.getSpectatorState();
+      expect(state.aiDebug).toBe(true);
     });
 
     it("should not include youRack field from PlayerGameState", () => {

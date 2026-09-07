@@ -1,8 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Server as SocketIOServer } from "socket.io";
 import { Game } from "../game.js";
 import { AiTurnController } from "./controller.js";
 import * as runnerModule from "./runner.js";
+import * as debugModule from "./debug.js";
+import { _clearAllTranscripts } from "./debug.js";
 import type { TileSet } from "@rummikub/shared";
 
 function createStubIo() {
@@ -152,5 +154,57 @@ describe("AiTurnController", () => {
 
     expect(runnerSpy).not.toHaveBeenCalled();
     runnerSpy.mockRestore();
+  });
+
+  describe("recordDebugItem", () => {
+    let recordSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      _clearAllTranscripts();
+      vi.stubEnv("AI_DEBUG", "true");
+      recordSpy = vi.spyOn(debugModule, "recordDebugItem");
+      game.start();
+      game.seedGame({
+        board: [],
+        racks: { p1: [], [aiPlayerId]: [{ id: "red-7-a", color: "red", value: 7 }] },
+        pool: [{ id: "red-1-a", color: "red", value: 1 }],
+        currentTurnPlayerId: aiPlayerId,
+        hasInitialMeld: { p1: true, [aiPlayerId]: true },
+      });
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      vi.restoreAllMocks();
+    });
+
+    it("should record and broadcast via the debug bus with the controller's io, game and playerId", () => {
+      const controller = new AiTurnController(io, game, "TEST01", aiPlayerId);
+
+      controller.recordDebugItem({ type: "prompt", text: "Turn 1 has started." });
+
+      expect(recordSpy).toHaveBeenCalledWith(
+        io,
+        game,
+        aiPlayerId,
+        expect.objectContaining({ type: "prompt", text: "Turn 1 has started." })
+      );
+      const emit = (io.to("TEST01") as unknown as { emit: ReturnType<typeof vi.fn> }).emit;
+      expect(emit).toHaveBeenCalledWith(
+        "ai:debug",
+        expect.objectContaining({ playerId: aiPlayerId, roundNumber: 1 })
+      );
+    });
+
+    it("should be a no-op when AI_DEBUG is off", () => {
+      vi.stubEnv("AI_DEBUG", "false");
+      const controller = new AiTurnController(io, game, "TEST01", aiPlayerId);
+
+      controller.recordDebugItem({ type: "tool_call", text: "draw_tile" });
+
+      expect(recordSpy).toHaveBeenCalledTimes(1);
+      const emit = (io.to("TEST01") as unknown as { emit: ReturnType<typeof vi.fn> }).emit;
+      expect(emit).not.toHaveBeenCalled();
+    });
   });
 });

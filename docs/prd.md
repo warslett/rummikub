@@ -100,7 +100,7 @@ The official Rummikub rules are maintained in [rules.md](rules.md) as the single
 |----|-------------|
 | F-41 | Players can add up to `MAX_PLAYERS - 1` AI opponents in the lobby, each configured with a model name |
 | F-42 | AI opponents take turns server-side through the same authoritative game API as human players; AI behaviour is configured via environment variables (`AI_PROVIDER`, `AI_BASE_URL`, `AI_API_KEY`, `AI_DEFAULT_MODEL`) |
-| F-43 | The AI's system prompt, conversation history, tool calls/results, and errors are logged to the server console as JSON lines (correlated by `gameCode` + `playerId`) for inspection via `docker compose logs` |
+| F-43 | When `AI_DEBUG=true`, the client shows an AI debug console: AI players in the top player strip are clickable and open a bottom-right panel showing that AI's rack and a readable session transcript (Prompt, Thinking, Tool call, Response items, tool calls by name only); the transcript scrolls back to the start of the round and streams live; full history is served to clients that joined late. The console is available to players and spectators. Showing the AI's rack is a debug-only exception to NF-04 |
 | F-44 | AI failures pause the game and surface the error to all players |
 | F-45 | The AI conversation is compacted (older exchanges folded into a summary) when it exceeds a configurable token budget, so long games do not blow the model's context window |
 
@@ -114,8 +114,8 @@ When it is an AI player's turn, the server runs a **tool-calling agent loop** ag
 - **Turn protocol**: a turn must end with exactly one successful turn-ending tool (`draw_tile`, `end_turn` or `pass_turn`); the loop stops as soon as one succeeds.
 - **Persistent conversation**: each AI player keeps its own conversation (system prompt + history) per game and round; a turn-start user message with the turn number and a compact note of observable events since the AI's last turn (derived from state diffs, e.g. "Alice drew a tile") is appended before each turn. Conversations are reset on Play Again.
 - **Guardrails**: a hard cap of `AI_MAX_TOOL_ITERATIONS` (default 25) tool-call iterations per turn; malformed tool calls and unknown tool names return readable error tool results; two consecutive completions with only malformed calls pause the game. Transient API errors (429, 5xx, network, timeout) are retried with exponential backoff (`AI_MAX_RETRIES`, `AI_RETRY_BASE_MS`); auth and context-length errors pause immediately. Any SDK error or cap breach throws and pauses the game (`ai:error` + stuck banner). Missing `AI_API_KEY` fails fast at the AI's first turn with a clear log line.
-- **Compaction**: before each turn the conversation's token count is estimated (`Math.ceil(chars/4)`); if it exceeds `AI_CONTEXT_TOKEN_LIMIT` (default 100000), all but the last `AI_COMPACT_KEEP_TURNS` exchanges are replaced with a model-generated summary plus a fixed note telling the model that board state is authoritative via `get_game_state`. Summarization failure falls back to truncation (`compaction_fallback`) instead of pausing. Compaction is logged (`event: "compaction"` with before/after token estimates).
-- **Logging**: JSON lines to stdout (`{ ts, gameCode, playerId, model, event, data }`) with events `system_prompt`, `request`, `response`, `tool_call`, `tool_result`, `turn_complete`, `retry`, `compaction`, `compaction_fallback`, `error`; view with `docker compose logs -f dev-server`.
+- **Compaction**: before each turn the conversation's token count is estimated (`Math.ceil(chars/4)`); if it exceeds `AI_CONTEXT_TOKEN_LIMIT` (default 100000), all but the last `AI_COMPACT_KEEP_TURNS` exchanges are replaced with a model-generated summary plus a fixed note telling the model that board state is authoritative via `get_game_state`. Summarization failure falls back to truncation (`compaction_fallback`) instead of pausing. Compaction is transparent to the model conversation only; the debug transcript buffer is append-only and never compacted.
+- **Debug console (replaces server-side logging)**: when `AI_DEBUG=true`, transcript items (Prompt, Thinking, Tool call, Response — readable text only, tool calls by name) are recorded server-side at the points where messages enter the conversation, buffered in memory per game/round/player (append-only for the round, unaffected by compaction), and broadcast live to the game room as `ai:debug` events; clients request the full round history via `ai:debugHistory` when the console opens. An `aiDebug` flag in `game:state` tells clients whether AI players are clickable. When off (default): no events, no buffer, no history endpoint, AI players are not clickable.
 
 ## 4. Non-Functional Requirements
 | ID | Requirement |
@@ -123,7 +123,7 @@ When it is an AI player's turn, the server runs a **tool-calling agent loop** ag
 | NF-01 | **Responsive**: UI must work on desktop and mobile devices (responsive design) |
 | NF-02 | **Real-time**: State changes propagate to all connected clients within 500ms |
 | NF-03 | **Concurrency**: Support at least 50 concurrent games on a single server instance |
-| NF-04 | **Security**: Players cannot see opponent tiles via network inspection (tiles are never sent to non-owning clients) |
+| NF-04 | **Security**: Players cannot see opponent tiles via network inspection (tiles are never sent to non-owning clients; debug-only exception: when `AI_DEBUG=true`, an AI player's rack is visible in the debug console — see F-43) |
 | NF-05 | **Integrity**: All game logic runs server-side; client is a thin UI layer |
 | NF-06 | **Accessibility**: Basic keyboard navigation and screen reader support |
 | NF-07 | **Visual style**: Traditional board game feel - mimics physical game with tile racks and table surface |

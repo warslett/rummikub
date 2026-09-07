@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Server as SocketIOServer } from "socket.io";
 import { Game } from "../../game.js";
 import { AiTurnController } from "../controller.js";
 import { ScriptedProvider } from "./scripted.js";
 import { getProvider } from "./index.js";
+import { getDebugTranscript, _clearAllTranscripts } from "../debug.js";
 
 function createStubIo() {
   return {
@@ -25,12 +26,18 @@ describe("ScriptedProvider", () => {
   let provider: ScriptedProvider;
 
   beforeEach(() => {
+    _clearAllTranscripts();
     io = createStubIo();
     game = new Game("TEST01");
     game.addPlayer("p1", "Alice");
     const ai = game.addAiPlayer("test-model");
     aiPlayerId = ai.id;
     provider = new ScriptedProvider();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
 
   it("should draw a tile when no script is provided", async () => {
@@ -196,6 +203,101 @@ describe("ScriptedProvider", () => {
     await expect(provider.takeTurn(controller)).rejects.toThrow("Boom after playing");
 
     expect(game.getState().board).toHaveLength(1);
+  });
+
+  describe("debug transcript recording", () => {
+    it("should record a prompt item and the executed tool names in order for a seeded script", async () => {
+      vi.stubEnv("AI_DEBUG", "true");
+      game.start();
+      const r7 = { id: "red-7-a", color: "red" as const, value: 7 as const };
+      const r8 = { id: "red-8-a", color: "red" as const, value: 8 as const };
+      const r9 = { id: "red-9-a", color: "red" as const, value: 9 as const };
+      game.seedGame({
+        board: [],
+        racks: { p1: [], [aiPlayerId]: [r7, r8, r9] },
+        pool: [{ id: "blue-1-a", color: "blue" as const, value: 1 as const }],
+        currentTurnPlayerId: aiPlayerId,
+        hasInitialMeld: { p1: true, [aiPlayerId]: true },
+        aiScripts: {
+          [aiPlayerId]: [
+            { action: "playSets", sets: [{ id: "s1", tiles: [r7, r8, r9] }] },
+            { action: "endTurn" },
+          ],
+        },
+      });
+
+      const controller = new AiTurnController(io, game, "TEST01", aiPlayerId);
+      await provider.takeTurn(controller, { turnNumber: 3, eventsNote: "Alice drew a tile" });
+
+      const transcript = getDebugTranscript(game, aiPlayerId);
+      expect(transcript.map((i) => i.type)).toEqual(["prompt", "tool_call", "tool_call"]);
+      expect(transcript[0].text).toContain("Turn 3");
+      expect(transcript[0].text).toContain("Alice drew a tile");
+      expect(transcript.slice(1).map((i) => i.text)).toEqual(["play_sets", "end_turn"]);
+    });
+
+    it("should record draw_tile on the fallback path when no script is provided", async () => {
+      vi.stubEnv("AI_DEBUG", "true");
+      game.start();
+      game.seedGame({
+        board: [],
+        racks: { p1: [], [aiPlayerId]: [] },
+        pool: [{ id: "red-5-a", color: "red" as const, value: 5 as const }],
+        currentTurnPlayerId: aiPlayerId,
+        hasInitialMeld: { p1: true, [aiPlayerId]: true },
+      });
+
+      const controller = new AiTurnController(io, game, "TEST01", aiPlayerId);
+      await provider.takeTurn(controller, { turnNumber: 1, eventsNote: "" });
+
+      const transcript = getDebugTranscript(game, aiPlayerId);
+      expect(transcript.map((i) => i.type)).toEqual(["prompt", "tool_call"]);
+      expect(transcript[1].text).toBe("draw_tile");
+    });
+
+    it("should record pass_turn on the fallback path when the pool is empty", async () => {
+      vi.stubEnv("AI_DEBUG", "true");
+      game.start();
+      game.seedGame({
+        board: [],
+        racks: { p1: [], [aiPlayerId]: [] },
+        pool: [],
+        currentTurnPlayerId: aiPlayerId,
+        hasInitialMeld: { p1: true, [aiPlayerId]: true },
+      });
+
+      const controller = new AiTurnController(io, game, "TEST01", aiPlayerId);
+      await provider.takeTurn(controller, { turnNumber: 1, eventsNote: "" });
+
+      const transcript = getDebugTranscript(game, aiPlayerId);
+      expect(transcript.map((i) => i.type)).toEqual(["prompt", "tool_call"]);
+      expect(transcript[1].text).toBe("pass_turn");
+    });
+
+    it("should not record anything when AI_DEBUG is off", async () => {
+      game.start();
+      const r7 = { id: "red-7-a", color: "red" as const, value: 7 as const };
+      const r8 = { id: "red-8-a", color: "red" as const, value: 8 as const };
+      const r9 = { id: "red-9-a", color: "red" as const, value: 9 as const };
+      game.seedGame({
+        board: [],
+        racks: { p1: [], [aiPlayerId]: [r7, r8, r9] },
+        pool: [{ id: "blue-1-a", color: "blue" as const, value: 1 as const }],
+        currentTurnPlayerId: aiPlayerId,
+        hasInitialMeld: { p1: true, [aiPlayerId]: true },
+        aiScripts: {
+          [aiPlayerId]: [
+            { action: "playSets", sets: [{ id: "s1", tiles: [r7, r8, r9] }] },
+            { action: "endTurn" },
+          ],
+        },
+      });
+
+      const controller = new AiTurnController(io, game, "TEST01", aiPlayerId);
+      await provider.takeTurn(controller, { turnNumber: 1, eventsNote: "" });
+
+      expect(getDebugTranscript(game, aiPlayerId)).toEqual([]);
+    });
   });
 });
 

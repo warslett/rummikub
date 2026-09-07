@@ -1,0 +1,178 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { Server as SocketIOServer } from "socket.io";
+import { Game } from "../game.js";
+import {
+  recordDebugItem,
+  getDebugTranscript,
+  resetTranscripts,
+  purgeGame,
+  _clearAllTranscripts,
+} from "./debug.js";
+import type { AiDebugEventPayload } from "@rummikub/shared";
+
+function createStubIo() {
+  const emitted: { room: string; event: string; data: unknown }[] = [];
+  return {
+    to: vi.fn((room: string) => ({
+      emit: vi.fn((event: string, data: unknown) => {
+        emitted.push({ room, event, data });
+      }),
+    })),
+    emit: vi.fn(),
+    sockets: {
+      adapter: { rooms: new Map() },
+      sockets: new Map(),
+    },
+    _emitted: emitted,
+  } as unknown as SocketIOServer & { _emitted: { room: string; event: string; data: unknown }[] };
+}
+
+const R7 = { id: "red-7-a", color: "red" as const, value: 7 as const };
+const R8 = { id: "red-8-a", color: "red" as const, value: 8 as const };
+const POOL_TILE = { id: "blue-2-a", color: "blue" as const, value: 2 as const };
+
+function createAiGame(gameCode = "TEST01"): { game: Game; aiPlayerId: string } {
+  const game = new Game(gameCode);
+  game.addPlayer("p1", "Alice");
+  const ai = game.addAiPlayer("test-model");
+  game.start();
+  game.seedGame({
+    board: [],
+    racks: { p1: [], [ai.id]: [R7, R8] },
+    pool: [POOL_TILE],
+    currentTurnPlayerId: ai.id,
+    hasInitialMeld: { p1: true, [ai.id]: true },
+  });
+  return { game, aiPlayerId: ai.id };
+}
+
+describe("AI debug bus", () => {
+  let io: ReturnType<typeof createStubIo>;
+
+  beforeEach(() => {
+    _clearAllTranscripts();
+    vi.stubEnv("AI_DEBUG", "true");
+    io = createStubIo();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("should record an item and broadcast ai:debug to the game room with rack captured at emit time", () => {
+    const { game, aiPlayerId } = createAiGame();
+    const item = { type: "prompt" as const, text: "Turn 1 has started." };
+
+    recordDebugItem(io, game, aiPlayerId, item);
+
+    const events = io._emitted.filter((e) => e.event === "ai:debug");
+    expect(events).toHaveLength(1);
+    expect(events[0].room).toBe("TEST01");
+    const payload = events[0].data as AiDebugEventPayload;
+    expect(payload.playerId).toBe(aiPlayerId);
+    expect(payload.roundNumber).toBe(1);
+    expect(payload.item.type).toBe("prompt");
+    expect(payload.item.text).toBe("Turn 1 has started.");
+    expect(isNaN(Date.parse(payload.item.ts))).toBe(false);
+    expect(payload.rack.map((t) => t.id)).toEqual([R7.id, R8.id]);
+  });
+
+  it("should append recorded items to the buffer in order", () => {
+    const { game, aiPlayerId } = createAiGame();
+
+    recordDebugItem(io, game, aiPlayerId, { type: "prompt", text: "Turn 1 has started." });
+    recordDebugItem(io, game, aiPlayerId, { type: "tool_call", text: "draw_tile" });
+
+    const transcript = getDebugTranscript(game, aiPlayerId);
+    expect(transcript.map((i) => i.type)).toEqual(["prompt", "tool_call"]);
+    expect(transcript.map((i) => i.text)).toEqual(["Turn 1 has started.", "draw_tile"]);
+  });
+
+  it("should be a no-op when AI_DEBUG is off", () => {
+    vi.stubEnv("AI_DEBUG", "false");
+    const { game, aiPlayerId } = createAiGame();
+
+    recordDebugItem(io, game, aiPlayerId, { type: "prompt", text: "Turn 1 has started." });
+
+    expect(io._emitted).toHaveLength(0);
+    expect(getDebugTranscript(game, aiPlayerId)).toEqual([]);
+  });
+
+  it("should reflect the post-action rack when recorded after a game action", () => {
+    const { game, aiPlayerId } = createAiGame();
+    const player = game.getState().players.find((p) => p.id === aiPlayerId)!;
+    player.rack = [R7];
+
+    recordDebugItem(io, game, aiPlayerId, { type: "tool_call", text: "draw_tile" });
+
+    const payload = io._emitted[0].data as AiDebugEventPayload;
+    expect(payload.rack.map((t) => t.id)).toEqual([R7.id]);
+  });
+
+  it("should keep transcripts isolated per player and per round", () => {
+    const { game, aiPlayerId } = createAiGame();
+    const other = new Game("OTHER1");
+    other.addPlayer("q1", "Quinn");
+    const otherAi = other.addAiPlayer("test-model");
+    other.start();
+    other.seedGame({
+      board: [],
+      racks: { q1: [], [otherAi.id]: [R7] },
+      pool: [POOL_TILE],
+      currentTurnPlayerId: otherAi.id,
+      hasInitialMeld: { q1: true, [otherAi.id]: true },
+    });
+
+    recordDebugItem(io, game, aiPlayerId, { type: "prompt", text: "game A item" });
+    recordDebugItem(io, other, otherAi.id, { type: "prompt", text: "game B item" });
+
+    expect(getDebugTranscript(game, aiPlayerId).map((i) => i.text)).toEqual(["game A item"]);
+    expect(getDebugTranscript(other, otherAi.id).map((i) => i.text)).toEqual(["game B item"]);
+    expect(getDebugTranscript(game, "p1")).toEqual([]);
+  });
+
+  it("should drop older-round buffers on resetTranscripts and keep current-round ones", () => {
+    const { game, aiPlayerId } = createAiGame();
+    recordDebugItem(io, game, aiPlayerId, { type: "prompt", text: "round 1 item" });
+
+    game.getState().roundNumber = 2;
+    recordDebugItem(io, game, aiPlayerId, { type: "prompt", text: "round 2 item" });
+
+    resetTranscripts("TEST01", 2);
+
+    expect(getDebugTranscript(game, aiPlayerId).map((i) => i.text)).toEqual(["round 2 item"]);
+  });
+
+  it("should not reset same-round transcripts when resetTranscripts is called for the current round", () => {
+    const { game, aiPlayerId } = createAiGame();
+    recordDebugItem(io, game, aiPlayerId, { type: "prompt", text: "round 1 item" });
+
+    resetTranscripts("TEST01", 1);
+
+    expect(getDebugTranscript(game, aiPlayerId)).toHaveLength(1);
+  });
+
+  it("should drop all rounds for a game on purgeGame but keep other games", () => {
+    const { game, aiPlayerId } = createAiGame();
+    const other = new Game("OTHER1");
+    other.addPlayer("q1", "Quinn");
+    const otherAi = other.addAiPlayer("test-model");
+    other.start();
+    other.seedGame({
+      board: [],
+      racks: { q1: [], [otherAi.id]: [R7] },
+      pool: [POOL_TILE],
+      currentTurnPlayerId: otherAi.id,
+      hasInitialMeld: { q1: true, [otherAi.id]: true },
+    });
+
+    recordDebugItem(io, game, aiPlayerId, { type: "prompt", text: "game A item" });
+    recordDebugItem(io, other, otherAi.id, { type: "prompt", text: "game B item" });
+
+    purgeGame("TEST01");
+
+    expect(getDebugTranscript(game, aiPlayerId)).toEqual([]);
+    expect(getDebugTranscript(other, otherAi.id).map((i) => i.text)).toEqual(["game B item"]);
+  });
+});

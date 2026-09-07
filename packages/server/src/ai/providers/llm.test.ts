@@ -5,8 +5,10 @@ import { RateLimitError, InternalServerError } from "openai";
 import { Game } from "../../game.js";
 import { AiTurnController } from "../controller.js";
 import { LlmProvider, resetConversations, purgeGame, _clearAllConversations } from "./llm.js";
+import { getDebugTranscript, _clearAllTranscripts } from "../debug.js";
 import { toolSchemas } from "../tools.js";
 import { aiConfig } from "../config.js";
+import type { AiDebugEventPayload } from "@rummikub/shared";
 
 function createStubIo() {
   return {
@@ -26,6 +28,7 @@ interface RecordedCall {
   tools: unknown;
   messages: { role: string; content: unknown }[];
   max_tokens?: number;
+  headers?: Record<string, string>;
 }
 
 interface StubClient {
@@ -38,17 +41,21 @@ function createStubClient(): StubClient {
   const responses: (Error | Record<string, unknown>)[] = [];
   const calls: RecordedCall[] = [];
   const create = vi.fn(
-    async (args: {
-      model: string;
-      messages: { role: string; content: unknown }[];
-      tools: unknown;
-      max_tokens?: number;
-    }) => {
+    async (
+      args: {
+        model: string;
+        messages: { role: string; content: unknown }[];
+        tools: unknown;
+        max_tokens?: number;
+      },
+      options?: { headers?: Record<string, string> }
+    ) => {
       calls.push({
         model: args.model,
         tools: args.tools,
         messages: args.messages.map((m) => ({ role: m.role, content: m.content })),
         max_tokens: args.max_tokens,
+        headers: options?.headers,
       });
       const next = responses.shift();
       if (next instanceof Error) {
@@ -100,6 +107,7 @@ describe("LlmProvider", () => {
 
   beforeEach(() => {
     _clearAllConversations();
+    _clearAllTranscripts();
     vi.stubEnv("AI_API_KEY", "test-key");
     io = createStubIo();
     game = new Game("TEST01");
@@ -491,53 +499,10 @@ describe("LlmProvider", () => {
     expect(client.chat.completions.create).not.toHaveBeenCalled();
   });
 
-  it("should log input and output events as JSON lines with correlation fields", async () => {
-    vi.stubEnv("AI_DEBUG", "true");
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    client.responses.push(
-      toolCallMessage([
-        {
-          id: "call-1",
-          name: "play_sets",
-          arguments: JSON.stringify({ sets: [{ id: "s1", tiles: [{ id: "nope", color: "red", value: 1 }] }] }),
-        },
-      ]),
-      toolCallMessage([{ id: "call-2", name: "draw_tile", arguments: "{}" }])
-    );
-
-    await provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), { turnNumber: 1, eventsNote: "" });
-
-    const lines = logSpy.mock.calls.map((c) => JSON.parse(c[0] as string) as Record<string, unknown>);
-    const events = lines.map((l) => l.event as string);
-    expect(events).toEqual(["request", "response", "request", "response"]);
-    for (const line of lines) {
-      expect(line.gameCode).toBe("TEST01");
-      expect(line.playerId).toBe(aiPlayerId);
-      expect(line.model).toBe("test-model");
-      expect(line.ts).toEqual(expect.any(String));
-    }
-    const firstRequest = lines[0].data as { iteration: number; messages: { role: string }[] };
-    expect(firstRequest.iteration).toBe(1);
-    expect(firstRequest.messages[0].role).toBe("system");
-    expect(firstRequest.messages[firstRequest.messages.length - 1].role).toBe("user");
-    const secondRequest = lines[2].data as { messages: { role: string }[] };
-    expect(secondRequest.messages.some((m) => m.role === "tool")).toBe(true);
-  });
-
-  it("should not log anything when AI_DEBUG is off", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    client.responses.push(toolCallMessage([{ id: "call-1", name: "draw_tile", arguments: "{}" }]));
-
-    await provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), { turnNumber: 1, eventsNote: "" });
-
-    expect(logSpy).not.toHaveBeenCalled();
-  });
-
-  it("should log the model reasoning content as a reasoning event", async () => {
-    vi.stubEnv("AI_DEBUG", "true");
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    client.responses.push(
-      {
+  describe("AI debug transcript recording", () => {
+    it("should record prompt, thinking, response and tool-call items in order with readable text", async () => {
+      vi.stubEnv("AI_DEBUG", "true");
+      client.responses.push({
         choices: [
           {
             message: {
@@ -548,15 +513,243 @@ describe("LlmProvider", () => {
             },
           },
         ],
+      });
+
+      await provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), {
+        turnNumber: 1,
+        eventsNote: "",
+      });
+
+      const transcript = getDebugTranscript(game, aiPlayerId);
+      expect(transcript.map((i) => i.type)).toEqual([
+        "prompt",
+        "prompt",
+        "thinking",
+        "response",
+        "tool_call",
+      ]);
+      expect(transcript[0].text).toContain("Sabra");
+      expect(transcript[0].text).toContain("AI: test-model");
+      expect(transcript[1].text).toContain("Turn 1");
+      expect(transcript[2].text).toContain("drawing is safe");
+      expect(transcript[3].text).toBe("I will draw a tile.");
+      expect(transcript[4].text).toBe("draw_tile");
+      for (const item of transcript) {
+        expect(item.ts).toEqual(expect.any(String));
+        expect(isNaN(Date.parse(item.ts))).toBe(false);
       }
-    );
+    });
 
-    await provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), { turnNumber: 1, eventsNote: "" });
+    it("should broadcast each recorded item as an ai:debug event with the post-tool rack", async () => {
+      vi.stubEnv("AI_DEBUG", "true");
+      client.responses.push(toolCallMessage([{ id: "call-1", name: "draw_tile", arguments: "{}" }]));
+      const emit = (io.to("TEST01") as unknown as { emit: ReturnType<typeof vi.fn> }).emit;
 
-    const lines = logSpy.mock.calls.map((c) => JSON.parse(c[0] as string) as Record<string, unknown>);
-    const reasoning = lines.find((l) => l.event === "reasoning") as { data: { content: string } };
-    expect(reasoning).toBeDefined();
-    expect(reasoning.data.content).toContain("drawing is safe");
+      await provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), {
+        turnNumber: 1,
+        eventsNote: "",
+      });
+
+      const debugEvents = emit.mock.calls.filter((c) => c[0] === "ai:debug");
+      expect(debugEvents).toHaveLength(3);
+      const lastPayload = debugEvents[debugEvents.length - 1][1] as AiDebugEventPayload;
+      expect(lastPayload.playerId).toBe(aiPlayerId);
+      expect(lastPayload.roundNumber).toBe(1);
+      expect(lastPayload.item.type).toBe("tool_call");
+      expect(lastPayload.rack.map((t) => t.id)).toContain("blue-2-a");
+    });
+
+    it("should not record or broadcast anything when AI_DEBUG is off", async () => {
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const emit = (io.to("TEST01") as unknown as { emit: ReturnType<typeof vi.fn> }).emit;
+      client.responses.push(toolCallMessage([{ id: "call-1", name: "draw_tile", arguments: "{}" }]));
+
+      await provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), {
+        turnNumber: 1,
+        eventsNote: "",
+      });
+
+      expect(getDebugTranscript(game, aiPlayerId)).toEqual([]);
+      expect(emit.mock.calls.filter((c) => c[0] === "ai:debug")).toHaveLength(0);
+      expect(logSpy).not.toHaveBeenCalled();
+    });
+
+    it("should record structured reasoning content blocks as readable text", async () => {
+      vi.stubEnv("AI_DEBUG", "true");
+      client.responses.push({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: "I will draw a tile.",
+              reasoning_content: [
+                { type: "text", text: "The rack has 7, 8, 9 red." },
+                { type: "text", text: "Drawing is safe." },
+              ],
+              tool_calls: [{ id: "call-1", type: "function", function: { name: "draw_tile", arguments: "{}" } }],
+            },
+          },
+        ],
+      });
+
+      await provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), {
+        turnNumber: 1,
+        eventsNote: "",
+      });
+
+      const thinking = getDebugTranscript(game, aiPlayerId).filter((i) => i.type === "thinking");
+      expect(thinking).toHaveLength(1);
+      expect(thinking[0].text).toContain("The rack has 7, 8, 9 red.");
+      expect(thinking[0].text).toContain("Drawing is safe.");
+      expect(thinking[0].text).not.toContain("[object Object]");
+    });
+
+    it("should not record a thinking item when reasoning content normalizes to empty text", async () => {
+      vi.stubEnv("AI_DEBUG", "true");
+      client.responses.push({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: "I will draw a tile.",
+              reasoning_content: [],
+              tool_calls: [{ id: "call-1", type: "function", function: { name: "draw_tile", arguments: "{}" } }],
+            },
+          },
+        ],
+      });
+
+      await provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), {
+        turnNumber: 1,
+        eventsNote: "",
+      });
+
+      const transcript = getDebugTranscript(game, aiPlayerId);
+      expect(transcript.filter((i) => i.type === "thinking")).toHaveLength(0);
+      expect(transcript.filter((i) => i.type === "tool_call").map((i) => i.text)).toEqual(["draw_tile"]);
+    });
+
+    it("should record a tool call but no response item when the completion has null content", async () => {
+      vi.stubEnv("AI_DEBUG", "true");
+      client.responses.push(toolCallMessage([{ id: "call-1", name: "draw_tile", arguments: "{}" }], null));
+
+      await provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), {
+        turnNumber: 1,
+        eventsNote: "",
+      });
+
+      const transcript = getDebugTranscript(game, aiPlayerId);
+      expect(transcript.filter((i) => i.type === "response")).toHaveLength(0);
+      expect(transcript.filter((i) => i.type === "tool_call").map((i) => i.text)).toEqual(["draw_tile"]);
+    });
+
+    it("should record the corrective prompt when the model replies with plain text", async () => {
+      vi.stubEnv("AI_DEBUG", "true");
+      client.responses.push(plainMessage("Let me think about it..."), plainMessage("Still thinking..."));
+
+      await expect(
+        provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), { turnNumber: 1, eventsNote: "" })
+      ).rejects.toThrow(/no tool call/i);
+
+      const transcript = getDebugTranscript(game, aiPlayerId);
+      expect(
+        transcript.some((i) => i.type === "prompt" && i.text === "Call a tool to take your turn.")
+      ).toBe(true);
+    });
+
+    it("should not print AI JSON log lines to stdout", async () => {
+      vi.stubEnv("AI_DEBUG", "true");
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      client.responses.push(
+        toolCallMessage([{ id: "call-1", name: "draw_tile", arguments: "{}" }]),
+        toolCallMessage([{ id: "call-2", name: "draw_tile", arguments: "{}" }])
+      );
+
+      await provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), {
+        turnNumber: 1,
+        eventsNote: "",
+      });
+
+      expect(logSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("provider request headers (OpenCode Go)", () => {
+    it("should send a stable x-opencode-session header on every completion in a conversation", async () => {
+      client.responses.push(
+        toolCallMessage([{ id: "call-1", name: "draw_tile", arguments: "{}" }]),
+        toolCallMessage([{ id: "call-2", name: "draw_tile", arguments: "{}" }])
+      );
+
+      await provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), {
+        turnNumber: 1,
+        eventsNote: "",
+      });
+      game.seedGame({
+        board: [],
+        racks: { p1: [], [aiPlayerId]: [R7] },
+        pool: [POOL_TILE],
+        currentTurnPlayerId: aiPlayerId,
+        hasInitialMeld: { p1: true, [aiPlayerId]: true },
+      });
+      await provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), {
+        turnNumber: 2,
+        eventsNote: "",
+      });
+
+      expect(client.calls).toHaveLength(2);
+      const sessionId = client.calls[0].headers?.["x-opencode-session"];
+      expect(sessionId).toBeTruthy();
+      expect(client.calls[1].headers?.["x-opencode-session"]).toBe(sessionId);
+    });
+
+    it("should send a distinct session header per conversation", async () => {
+      const twoAiGame = new Game("TEST02");
+      twoAiGame.addPlayer("p1", "Alice");
+      const ai1 = twoAiGame.addAiPlayer("test-model");
+      const ai2 = twoAiGame.addAiPlayer("second-model");
+      twoAiGame.start();
+      twoAiGame.seedGame({
+        board: [],
+        racks: { p1: [R9], [ai1.id]: [R7], [ai2.id]: [R8] },
+        pool: [POOL_TILE, { id: "orange-3-a", color: "orange" as const, value: 3 as const }],
+        currentTurnPlayerId: ai1.id,
+        hasInitialMeld: { p1: true, [ai1.id]: true, [ai2.id]: true },
+      });
+
+      client.responses.push(
+        toolCallMessage([{ id: "call-1", name: "draw_tile", arguments: "{}" }]),
+        toolCallMessage([{ id: "call-2", name: "draw_tile", arguments: "{}" }])
+      );
+
+      await provider.takeTurn(new AiTurnController(io, twoAiGame, "TEST02", ai1.id), {
+        turnNumber: 1,
+        eventsNote: "",
+      });
+      await provider.takeTurn(new AiTurnController(io, twoAiGame, "TEST02", ai2.id), {
+        turnNumber: 2,
+        eventsNote: "",
+      });
+
+      const session1 = client.calls[0].headers?.["x-opencode-session"];
+      const session2 = client.calls[1].headers?.["x-opencode-session"];
+      expect(session1).toBeTruthy();
+      expect(session2).toBeTruthy();
+      expect(session2).not.toBe(session1);
+    });
+
+    it("should identify the app instead of the SDK with the User-Agent header", async () => {
+      client.responses.push(toolCallMessage([{ id: "call-1", name: "draw_tile", arguments: "{}" }]));
+
+      await provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), {
+        turnNumber: 1,
+        eventsNote: "",
+      });
+
+      const userAgent = client.calls[0].headers?.["User-Agent"];
+      expect(userAgent).toBeTruthy();
+      expect(userAgent).not.toMatch(/openai/i);
+    });
   });
 
   describe("purgeGame", () => {

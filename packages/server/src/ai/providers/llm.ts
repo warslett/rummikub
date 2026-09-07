@@ -1,7 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionMessage } from "openai/resources/chat/completions.js";
 import { aiConfig } from "../config.js";
-import { aiLog } from "../logger.js";
 import { buildSystemPrompt, buildTurnStartMessage } from "../prompt.js";
 import { executeTool, toolSchemas } from "../tools.js";
 import { withRetries } from "../retry.js";
@@ -10,6 +9,15 @@ import type { AiProvider, TurnContext } from "./types.js";
 import type { AiTurnController } from "../controller.js";
 
 const conversations = new Map<string, ChatCompletionMessageParam[]>();
+
+const PROVIDER_USER_AGENT = "rummikub-ai/1.0";
+
+function providerRequestHeaders(sessionId: string): Record<string, string> {
+  return {
+    "User-Agent": PROVIDER_USER_AGENT,
+    "x-opencode-session": sessionId,
+  };
+}
 
 export function resetConversations(gameCode: string, roundNumber: number): void {
   for (const key of [...conversations.keys()]) {
@@ -33,6 +41,22 @@ export function purgeGame(gameCode: string): void {
 
 export function _clearAllConversations(): void {
   conversations.clear();
+}
+
+function readableReasoning(reasoning: unknown): string {
+  if (typeof reasoning === "string") {
+    return reasoning;
+  }
+  if (Array.isArray(reasoning)) {
+    return reasoning
+      .map((part) =>
+        part && typeof part === "object" && "text" in part
+          ? String((part as { text: unknown }).text)
+          : String(part)
+      )
+      .join("\n");
+  }
+  return reasoning == null ? "" : JSON.stringify(reasoning);
 }
 
 export class LlmProvider implements AiProvider {
@@ -65,32 +89,31 @@ export class LlmProvider implements AiProvider {
     }
 
     const key = `${gameCode}:${roundNumber}:${playerId}`;
+    const requestHeaders = providerRequestHeaders(`rummikub-${key}`);
     let conversation = conversations.get(key);
     if (!conversation) {
       conversation = [];
       const systemPrompt = buildSystemPrompt(playerName, model);
       conversation.push({ role: "system", content: systemPrompt });
       conversations.set(key, conversation);
+      controller.recordDebugItem({ type: "prompt", text: systemPrompt });
     }
 
+    const turnStartMessage = buildTurnStartMessage(
+      context?.turnNumber ?? 1,
+      context?.eventsNote ?? ""
+    );
     if (needsCompaction(conversation, aiConfig.contextTokenLimit)) {
       const { messages: compacted } = await compact(conversation, this.client, {
         keepExchanges: aiConfig.compactKeepTurns,
         model,
+        headers: requestHeaders,
       });
       conversations.set(key, compacted);
       conversation = compacted;
-
-      conversation.push({
-        role: "user",
-        content: buildTurnStartMessage(context?.turnNumber ?? 1, context?.eventsNote ?? ""),
-      });
-    } else {
-      conversation.push({
-        role: "user",
-        content: buildTurnStartMessage(context?.turnNumber ?? 1, context?.eventsNote ?? ""),
-      });
     }
+    conversation.push({ role: "user", content: turnStartMessage });
+    controller.recordDebugItem({ type: "prompt", text: turnStartMessage });
 
     let correctiveSent = false;
     let malformedStreak = 0;
@@ -98,14 +121,9 @@ export class LlmProvider implements AiProvider {
     const maxIterations = aiConfig.maxToolIterations;
 
     for (let iteration = 1; iteration <= maxIterations; iteration++) {
-      aiLog(gameCode, playerId, model, "request", {
-        iteration,
-        messages: conversation,
-      });
-
       let message: ChatCompletionMessage | undefined;
       try {
-        message = await this.createCompletion(model, conversation);
+        message = await this.createCompletion(model, conversation, requestHeaders);
       } catch (err) {
         throw err instanceof Error ? err : new Error("Unknown LLM error");
       }
@@ -115,10 +133,13 @@ export class LlmProvider implements AiProvider {
       }
 
       const reasoning = (message as { reasoning_content?: unknown }).reasoning_content;
-      if (reasoning) {
-        aiLog(gameCode, playerId, model, "reasoning", { iteration, content: reasoning });
+      const thinkingText = readableReasoning(reasoning);
+      if (thinkingText.length > 0) {
+        controller.recordDebugItem({ type: "thinking", text: thinkingText });
       }
-      aiLog(gameCode, playerId, model, "response", { iteration, message });
+      if (typeof message.content === "string" && message.content.length > 0) {
+        controller.recordDebugItem({ type: "response", text: message.content });
+      }
 
       if (message.tool_calls && message.tool_calls.length > 0) {
         conversation.push({
@@ -144,6 +165,7 @@ export class LlmProvider implements AiProvider {
           const rawArgs = toolCall.type === "function" ? toolCall.function.arguments : undefined;
           const outcome = executeTool(controller, name, rawArgs);
           actions.push(name);
+          controller.recordDebugItem({ type: "tool_call", text: name });
 
           conversation.push({
             role: "tool",
@@ -182,6 +204,7 @@ export class LlmProvider implements AiProvider {
         correctiveSent = true;
         conversation.push({ role: "assistant", content: message.content });
         conversation.push({ role: "user", content: "Call a tool to take your turn." });
+        controller.recordDebugItem({ type: "prompt", text: "Call a tool to take your turn." });
         continue;
       }
 
@@ -193,16 +216,20 @@ export class LlmProvider implements AiProvider {
 
   private async createCompletion(
     model: string,
-    messages: ChatCompletionMessageParam[]
+    messages: ChatCompletionMessageParam[],
+    headers: Record<string, string>
   ): Promise<ChatCompletionMessage | undefined> {
     const completion = await withRetries(
       () =>
-        this.client.chat.completions.create({
-          model,
-          messages,
-          tools: toolSchemas,
-          stream: false,
-        }),
+        this.client.chat.completions.create(
+          {
+            model,
+            messages,
+            tools: toolSchemas,
+            stream: false,
+          },
+          { headers }
+        ),
       { maxRetries: aiConfig.maxRetries, baseMs: aiConfig.retryBaseMs }
     );
     return completion.choices[0]?.message;

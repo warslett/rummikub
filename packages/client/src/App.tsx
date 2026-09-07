@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { GameContext, useGame } from "./contexts/GameContext";
 import type { LobbyPlayer } from "./contexts/GameContext";
+import { AiDebugProvider } from "./contexts/AiDebugContext";
 import { socket } from "./socket";
 import type { PlayerGameState, SpectatorGameState, AiModelsPayload, AiErrorPayload } from "@rummikub/shared";
 import { Home } from "./pages/Home";
@@ -117,22 +118,24 @@ export function App() {
 
   return (
     <GameContext.Provider value={{ gameState, setGameState, playerId, setPlayerId, gameCode, setGameCode, error, setError: clearError, isSpectator, setIsSpectator, spectatorState, setSpectatorState, lobbyPlayers, setLobbyPlayers, aiModels, setAiModels, aiError, setAiError }}>
-      <BrowserRouter>
-        <div className="min-h-screen bg-gray-900 text-white">
-          {error && (
-            <div className="fixed top-4 right-4 z-50 bg-red-600 text-white px-4 py-2 rounded shadow-lg">
-              {error}
-            </div>
-          )}
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/game/:gameCode" element={<GameBoardWrapper />} />
-            <Route path="/lobby/:gameCode" element={<Lobby />} />
-            <Route path="/game-over" element={gameEnded ? <GameOver result={gameEnded} /> : <Navigate to="/" />} />
-            <Route path="*" element={<Navigate to="/" />} />
-          </Routes>
-        </div>
-      </BrowserRouter>
+      <AiDebugProvider>
+        <BrowserRouter>
+          <div className="min-h-screen bg-gray-900 text-white">
+            {error && (
+              <div className="fixed top-4 right-4 z-50 bg-red-600 text-white px-4 py-2 rounded shadow-lg">
+                {error}
+              </div>
+            )}
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/game/:gameCode" element={<GameBoardWrapper />} />
+              <Route path="/lobby/:gameCode" element={<Lobby />} />
+              <Route path="/game-over" element={gameEnded ? <GameOver result={gameEnded} /> : <Navigate to="/" />} />
+              <Route path="*" element={<Navigate to="/" />} />
+            </Routes>
+          </div>
+        </BrowserRouter>
+      </AiDebugProvider>
     </GameContext.Provider>
   );
 }

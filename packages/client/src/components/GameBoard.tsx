@@ -149,15 +149,19 @@ export function OpponentInfo({
   disconnected,
   isAI,
   model,
+  debugClickable,
+  onDebugClick,
 }: {
   name: string;
   rackSize: number;
   disconnected?: boolean;
   isAI?: boolean;
   model?: string;
+  debugClickable?: boolean;
+  onDebugClick?: () => void;
 }) {
-  return (
-    <div className="flex items-center gap-3 px-3 py-2 bg-[#1C1C1C] rounded-lg border border-[#333333]">
+  const content = (
+    <>
       <div className="flex items-center gap-2">
         <span className={`text-sm ${disconnected ? "text-red-400" : "text-gray-400"}`}>{name}</span>
         {isAI && (
@@ -169,6 +173,25 @@ export function OpponentInfo({
       <span className="text-gray-500">|</span>
       <span className="text-gray-400 text-sm">{rackSize} tiles</span>
       {disconnected && <span className="text-red-400 text-xs">(disconnected)</span>}
+    </>
+  );
+
+  if (debugClickable) {
+    return (
+      <button
+        type="button"
+        data-testid="ai-debug-player"
+        onClick={onDebugClick}
+        className="flex items-center gap-3 px-3 py-2 bg-[#1C1C1C] rounded-lg border border-[#333333] cursor-pointer hover:border-amber-400 transition-colors text-left"
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 bg-[#1C1C1C] rounded-lg border border-[#333333]">
+      {content}
     </div>
   );
 }

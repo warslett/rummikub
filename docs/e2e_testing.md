@@ -12,6 +12,7 @@ docker compose -f docker-compose.dev.yml run -d --name dev-server \
   -e NODE_ENV=test \
   -e AI_PROVIDER=scripted \
   -e AI_DEFAULT_MODEL=test-model \
+  -e AI_DEBUG=true \
   dev \
   sh -c "npm run build --workspace=packages/shared && npm run build --workspace=packages/server && npx concurrently 'node --watch packages/server/dist/index.js' 'npx vite packages/client --host 0.0.0.0 --port 5173'"
 ```
@@ -26,6 +27,7 @@ docker compose -f docker-compose.dev.yml run -d --name dev-server \
 | `-e NODE_ENV=test` | Enables the `/test/seed` endpoint on the server. **Without this, all E2E tests that call `seedGame` will fail with 404.** |
 | `-e AI_PROVIDER=scripted` | Configures the server to use deterministic scripted AI provider for E2E tests |
 | `-e AI_DEFAULT_MODEL=test-model` | Sets default model name for AI player selection in tests |
+| `-e AI_DEBUG=true` | Enables the AI debug console (transcript recording, `ai:debug` broadcasts, clickable AI players in the strip). **Required for the AI debug console tests (TC-AI-13/TC-AI-14); harmless for other tests** |
 | `npm run build --workspace=packages/shared` | Must rebuild shared before server so the server picks up latest types |
 | `npm run build --workspace=packages/server` | Must build server TypeScript before `node --watch` can run it |
 | `npx vite packages/client --host 0.0.0.0` | The `--host 0.0.0.0` flag is **required** — without it Vite only listens on localhost inside the container |

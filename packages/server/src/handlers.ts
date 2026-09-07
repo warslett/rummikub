@@ -2,11 +2,14 @@ import { Server as SocketIOServer } from "socket.io";
 import { GameManager } from "./gameManager.js";
 import { MAX_PLAYERS } from "@rummikub/shared";
 import type { TileSet } from "@rummikub/shared";
+import type { AiDebugHistoryRequestPayload } from "@rummikub/shared";
 import type { SeedState } from "./game.js";
 import type { SpectatorGameState } from "@rummikub/shared";
 import { emitPlayerStates, emitGameEnded, emitStalemateEnded } from "./emissions.js";
 import { maybeRunNextTurn, resetTurnContext, resetAiErrors } from "./ai/runner.js";
 import { resetConversations } from "./ai/providers/llm.js";
+import { getDebugTranscript, resetTranscripts } from "./ai/debug.js";
+import { aiConfig } from "./ai/config.js";
 import { getModels } from "./ai/models.js";
 
 const manager = new GameManager();
@@ -268,6 +271,7 @@ export function registerHandlers(io: SocketIOServer): void {
       }
 
       resetConversations(data.gameCode, game.getState().roundNumber);
+      resetTranscripts(data.gameCode, game.getState().roundNumber);
       resetTurnContext(data.gameCode);
       resetAiErrors(data.gameCode);
 
@@ -364,6 +368,34 @@ export function registerHandlers(io: SocketIOServer): void {
     socket.on("ai:getModels", async () => {
       const models = await getModels();
       socket.emit("ai:models", models);
+    });
+
+    socket.on("ai:debugHistory", (payload?: Partial<AiDebugHistoryRequestPayload>) => {
+      const game = manager.getGame(data.gameCode);
+      const playerId = typeof payload?.playerId === "string" ? payload.playerId : "";
+      if (!game) {
+        socket.emit("ai:debugHistory", { playerId, roundNumber: 0, items: [], rack: [] });
+        return;
+      }
+
+      const state = game.getState();
+      const player = state.players.find((p) => p.id === playerId);
+      if (!aiConfig.debug || !player?.isAI) {
+        socket.emit("ai:debugHistory", {
+          playerId,
+          roundNumber: state.roundNumber,
+          items: [],
+          rack: [],
+        });
+        return;
+      }
+
+      socket.emit("ai:debugHistory", {
+        playerId: player.id,
+        roundNumber: state.roundNumber,
+        items: getDebugTranscript(game, player.id),
+        rack: [...player.rack],
+      });
     });
 
     if (process.env.NODE_ENV === "test") {

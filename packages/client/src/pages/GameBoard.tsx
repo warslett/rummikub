@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useGame } from "../contexts/GameContext";
+import { useAiDebug } from "../contexts/AiDebugContext";
 import { socket } from "../socket";
 import { Board, Rack, Pool, OpponentInfo, Controls } from "../components/GameBoard";
+import { AiDebugConsole } from "../components/AiDebugConsole";
 import { formSetsFromTiles, sortSetTiles, JOKER_COLOR, getBoardValidationErrors } from "@rummikub/shared";
 import type { Tile, TileSet } from "@rummikub/shared";
 function isJoker(tile: Tile): boolean {
@@ -44,6 +46,7 @@ function generateSetId(): string {
 
 export function GameBoard() {
   const { gameState, playerId, aiError } = useGame();
+  const { openConsole, openPlayerId } = useAiDebug();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [workingBoard, setWorkingBoard] = useState<TileSet[] | null>(null);
   const [workingRack, setWorkingRack] = useState<Tile[] | null>(null);
@@ -390,6 +393,8 @@ export function GameBoard() {
               disconnected={!opp.connected}
               isAI={opp.isAI}
               model={opp.model}
+              debugClickable={gameState.aiDebug && opp.isAI}
+              onDebugClick={() => openConsole(opp.id)}
             />
           ))}
         </div>
@@ -459,6 +464,16 @@ export function GameBoard() {
               return currentOpponent ? `${currentOpponent.name}'s turn` : "Other player's turn";
             })()}
       </div>
+
+      {openPlayerId && (() => {
+        const debugOpponent = gameState.opponents.find((o) => o.id === openPlayerId);
+        return (
+          <AiDebugConsole
+            playerName={debugOpponent?.name ?? "AI"}
+            model={debugOpponent?.model}
+          />
+        );
+      })()}
     </div>
   );
 }

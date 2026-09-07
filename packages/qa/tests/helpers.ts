@@ -59,7 +59,10 @@ export interface SeedState {
   aiScripts?: Record<string, unknown[]>;
 }
 
-export async function addAiPlayer(page: Page, model?: string): Promise<void> {
+export async function addAiPlayer(page: Page, model?: string, name?: string): Promise<void> {
+  if (name) {
+    await page.getByPlaceholder("AI Player Name").fill(name);
+  }
   if (model) {
     await page.locator("select").selectOption(model);
   }
