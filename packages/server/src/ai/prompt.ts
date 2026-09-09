@@ -32,6 +32,12 @@ export function buildSystemPrompt(playerName: string, model: string): string {
     "- Check the initial meld requirement before trying to play sets on your first turn.",
     "- end_turn accepts an optional newBoard if you want to rearrange the board and end the turn in one step.",
     "- Watch opponents' rack sizes: the player with the fewest tiles is closest to winning.",
+    "- Use manipulate_board to open up new opportunities to play your own tiles (see examples below).",
+    "",
+    "## Board Manipulation examples",
+    " - You can take tiles from the start or end of a set on the board so that you can use them to make up new sets with other tiles on your rack",
+    " - You can split large sets so that you can add tiles from your rack to the beginning or end of the new sets",
+    " - You can replace jokers with tiles on your rack so that you can reuse the joker with tiles on your own rack",
   ].join("\n");
 }
 
