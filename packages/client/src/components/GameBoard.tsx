@@ -147,6 +147,7 @@ export function OpponentInfo({
   name,
   rackSize,
   disconnected,
+  isCurrentTurn,
   isAI,
   model,
   debugClickable,
@@ -155,15 +156,18 @@ export function OpponentInfo({
   name: string;
   rackSize: number;
   disconnected?: boolean;
+  isCurrentTurn?: boolean;
   isAI?: boolean;
   model?: string;
   debugClickable?: boolean;
   onDebugClick?: () => void;
 }) {
+  const nameColor = disconnected ? "text-red-400" : isCurrentTurn ? "text-amber-300" : "text-gray-400";
+  const borderColor = isCurrentTurn ? "border-amber-400" : "border-[#333333]";
   const content = (
     <>
       <div className="flex items-center gap-2">
-        <span className={`text-sm ${disconnected ? "text-red-400" : "text-gray-400"}`}>{name}</span>
+        <span className={`text-sm ${nameColor}`}>{name}</span>
         {isAI && (
           <span className="px-1.5 py-0.5 text-xs bg-indigo-700 text-indigo-100 rounded font-semibold">
             {model ? `AI · ${model}` : "AI"}
@@ -182,7 +186,7 @@ export function OpponentInfo({
         type="button"
         data-testid="ai-debug-player"
         onClick={onDebugClick}
-        className="flex items-center gap-3 px-3 py-2 bg-[#1C1C1C] rounded-lg border border-[#333333] cursor-pointer hover:border-amber-400 transition-colors text-left"
+        className={`flex items-center gap-3 px-3 py-2 bg-[#1C1C1C] rounded-lg border ${borderColor} cursor-pointer hover:border-amber-400 transition-colors text-left`}
       >
         {content}
       </button>
@@ -190,7 +194,7 @@ export function OpponentInfo({
   }
 
   return (
-    <div className="flex items-center gap-3 px-3 py-2 bg-[#1C1C1C] rounded-lg border border-[#333333]">
+    <div className={`flex items-center gap-3 px-3 py-2 bg-[#1C1C1C] rounded-lg border ${borderColor}`}>
       {content}
     </div>
   );

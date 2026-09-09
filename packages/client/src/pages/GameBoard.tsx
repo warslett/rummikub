@@ -391,6 +391,7 @@ export function GameBoard() {
               name={opp.name}
               rackSize={opp.rackSize}
               disconnected={!opp.connected}
+              isCurrentTurn={opp.id === gameState.currentTurnPlayerId}
               isAI={opp.isAI}
               model={opp.model}
               debugClickable={gameState.aiDebug && opp.isAI}
