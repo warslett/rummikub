@@ -150,7 +150,6 @@ describe("LlmProvider", () => {
     expect(String(call.messages[0].content)).toContain("AI: test-model");
     expect(call.messages[1].role).toBe("user");
     expect(String(call.messages[1].content)).toContain("Turn 1");
-    expect(String(call.messages[1].content)).toContain("get_game_state");
   });
 
   it("should fall back to aiConfig.defaultModel when the player has no model", async () => {

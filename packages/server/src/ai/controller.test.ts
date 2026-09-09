@@ -107,6 +107,32 @@ describe("AiTurnController", () => {
     expect(game.getState().board).toHaveLength(1);
   });
 
+  it("should return ok: false on endTurn when a board tile taken by manipulation is still on the rack", () => {
+    game.start();
+    const r10 = { id: "red-10-a", color: "red" as const, value: 10 as const };
+    const b10 = { id: "blue-10-a", color: "blue" as const, value: 10 as const };
+    const bk10 = { id: "black-10-a", color: "black" as const, value: 10 as const };
+    const o10 = { id: "orange-10-a", color: "orange" as const, value: 10 as const };
+    game.seedGame({
+      board: [{ id: "s1", tiles: [r10, b10, bk10, o10] }],
+      racks: { p1: [], [aiPlayerId]: [{ id: "blue-2-a", color: "blue" as const, value: 2 as const }] },
+      pool: [],
+      currentTurnPlayerId: aiPlayerId,
+      hasInitialMeld: { p1: true, [aiPlayerId]: true },
+    });
+
+    const controller = new AiTurnController(io, game, "TEST01", aiPlayerId);
+    const manipRes = controller.manipulateBoard([{ id: "s1", tiles: [r10, b10, bk10] }]);
+    expect(manipRes.ok).toBe(true);
+
+    const endRes = controller.endTurn();
+    expect(endRes.ok).toBe(false);
+    if (!endRes.ok) {
+      expect(endRes.error).toMatch(/start of your turn/);
+    }
+    expect(game.getPlayerState(aiPlayerId).isYourTurn).toBe(true);
+  });
+
   it("should handle passTurn and emit stalemate game:ended when pass triggers stalemate", () => {
     game.start();
     game.seedGame({

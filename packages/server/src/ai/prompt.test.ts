@@ -22,6 +22,17 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toMatch(/initial meld/i);
   });
 
+  it("should explain that board tiles can be moved to the rack to enable more plays", () => {
+    expect(prompt).toMatch(/move tiles from the board (?:to|onto) your rack/i);
+    expect(prompt).toMatch(/split existing sets/i);
+    expect(prompt).toMatch(/new sets/i);
+  });
+
+  it("should require tiles taken from the board to be back on the board before ending the turn", () => {
+    expect(prompt).toMatch(/before you end your turn/i);
+    expect(prompt).toMatch(/valid arrangement/i);
+  });
+
   it("should include the turn protocol with the turn-ending tools", () => {
     expect(prompt).toContain("get_game_state");
     expect(prompt).toContain("draw_tile");
@@ -37,10 +48,9 @@ describe("buildSystemPrompt", () => {
 });
 
 describe("buildTurnStartMessage", () => {
-  it("should include the turn number and a nudge to call get_game_state", () => {
+  it("should include the turn number", () => {
     const message = buildTurnStartMessage(1, "");
     expect(message).toContain("1");
-    expect(message).toContain("get_game_state");
   });
 
   it("should format the events note into the message", () => {

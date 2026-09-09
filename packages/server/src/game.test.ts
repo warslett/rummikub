@@ -1253,6 +1253,81 @@ describe("Game", () => {
     });
   });
 
+  describe("turn end rack validation", () => {
+    let gameWithBoard: Game;
+    let r10: Tile;
+    let b10: Tile;
+    let bk10: Tile;
+    let o10: Tile;
+
+    beforeEach(() => {
+      gameWithBoard = new Game("TEST01");
+      gameWithBoard.addPlayer("p1", "Alice");
+      gameWithBoard.addPlayer("p2", "Bob");
+      gameWithBoard.start();
+
+      r10 = makeTile("red", 10, "r10a");
+      b10 = makeTile("blue", 10, "b10a");
+      bk10 = makeTile("black", 10, "bk10a");
+      o10 = makeTile("orange", 10, "o10a");
+
+      gameWithBoard.getState().players[0].rack = [r10, b10, bk10, o10];
+      gameWithBoard.playSets("p1", [{ id: "s1", tiles: [r10, b10, bk10, o10] }]);
+      gameWithBoard.endTurn("p1");
+
+      gameWithBoard.getState().players[1].rack = [];
+      gameWithBoard.drawTile("p2");
+
+      gameWithBoard.getState().players[0].rack = [
+        makeTile("orange", 8, "o8a"),
+        makeTile("orange", 9, "o9a"),
+        makeTile("blue", 2, "b2a"),
+        makeTile("blue", 3, "b3a"),
+        makeTile("blue", 4, "b4a"),
+      ];
+    });
+
+    it("should reject endTurn when a board tile was moved to the rack and not played back", () => {
+      gameWithBoard.manipulateBoard("p1", [{ id: "s1", tiles: [r10, b10, bk10] }]);
+      expect(gameWithBoard.getState().players[0].rack.some((t) => t.id === "o10a")).toBe(true);
+
+      expect(() => gameWithBoard.endTurn("p1")).toThrow(/start of your turn/);
+      expect(gameWithBoard.getState().currentTurnIndex).toBe(0);
+      expect(gameWithBoard.getState().players[0].rack.some((t) => t.id === "o10a")).toBe(true);
+    });
+
+    it("should reject endTurn when a board tile was moved to the rack and only unrelated rack tiles were played", () => {
+      gameWithBoard.manipulateBoard("p1", [{ id: "s1", tiles: [r10, b10, bk10] }]);
+      gameWithBoard.playSets("p1", [{
+        id: "s2",
+        tiles: [makeTile("blue", 2, "b2a"), makeTile("blue", 3, "b3a"), makeTile("blue", 4, "b4a")],
+      }]);
+      expect(gameWithBoard.getState().players[0].rack.some((t) => t.id === "o10a")).toBe(true);
+
+      expect(() => gameWithBoard.endTurn("p1")).toThrow(/start of your turn/);
+      expect(gameWithBoard.getState().currentTurnIndex).toBe(0);
+    });
+
+    it("should allow endTurn when a board tile moved to the rack is played back in a new set", () => {
+      gameWithBoard.manipulateBoard("p1", [{ id: "s1", tiles: [r10, b10, bk10] }]);
+      gameWithBoard.playSets("p1", [{
+        id: "s2",
+        tiles: [makeTile("orange", 8, "o8a"), makeTile("orange", 9, "o9a"), o10],
+      }]);
+      expect(gameWithBoard.getState().players[0].rack.map((t) => t.id)).toEqual(["b2a", "b3a", "b4a"]);
+
+      expect(() => gameWithBoard.endTurn("p1")).not.toThrow();
+      expect(gameWithBoard.getState().currentTurnIndex).toBe(1);
+      expect(gameWithBoard.getState().board).toHaveLength(2);
+    });
+
+    it("should reject endTurnWithBoard when the manipulation would leave a board tile on the rack", () => {
+      expect(() => gameWithBoard.endTurnWithBoard("p1", [{ id: "s1", tiles: [r10, b10, bk10] }])).toThrow(/start of your turn/);
+      expect(gameWithBoard.getState().currentTurnIndex).toBe(0);
+      expect(gameWithBoard.getState().players[0].rack.some((t) => t.id === "o10a")).toBe(true);
+    });
+  });
+
   describe("seedGame", () => {
     it("should set board, racks, pool, and phase", () => {
       game.start();

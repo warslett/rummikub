@@ -290,15 +290,22 @@ export class Game {
 
     const hasPlaceSet = this.state.turnActions.some((a) => a.type === "placeSet");
     const hasDraw = this.state.turnActions.some((a) => a.type === "draw");
+    const snapshot = this.state.turnSnapshot;
 
     if (!hasPlaceSet && !hasDraw) {
-      const snapshot = this.state.turnSnapshot;
       if (snapshot && this.boardsAreEqual(this.state.board, snapshot.board)) {
         throw new Error("Must make a valid play or draw a tile");
       }
     }
 
     const player = this.getPlayer(playerId);
+
+    if (snapshot) {
+      const startRackIds = new Set(snapshot.rack.map((t) => t.id));
+      if (player.rack.some((t) => !startRackIds.has(t.id))) {
+        throw new Error("Cannot end turn with tiles that were not in your rack at the start of your turn. Return them to the board or undo your turn.");
+      }
+    }
 
     if (this.state.turnActions.some((a) => a.type === "placeSet" || a.type === "manipulate")) {
       if (!player.hasInitialMeld) {

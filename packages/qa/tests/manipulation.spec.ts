@@ -610,4 +610,40 @@ test.describe("Board Manipulation", () => {
     await ctx1.close();
     await ctx2.close();
   });
+
+  test("TC-71: Cannot end turn with a board tile left on the rack", async ({ browser }) => {
+    const { page1, page2, ctx1, ctx2, gameCode, player1Id, player2Id } = await createAndStartGame(browser);
+
+    await seedAndWait(gameCode, {
+      board: [{ id: "s1", tiles: [tile("red", 7, "red-7-a"), tile("blue", 7, "blue-7-a"), tile("black", 7, "black-7-a"), tile("orange", 7, "orange-7-a")] }],
+      racks: {
+        [player1Id]: [tile("blue", 3, "blue-3-a")],
+        [player2Id]: [tile("orange", 1, "orange-1-a")],
+      },
+      pool: [],
+      currentTurnPlayerId: player1Id,
+      hasInitialMeld: { [player1Id]: true, [player2Id]: true },
+    }, [page1, page2]);
+
+    const activePlayer = await getActivePlayer(page1, page2);
+
+    const boardArea = activePlayer.locator(".gap-3.p-5.rounded-xl");
+    const orange7 = boardArea.locator("button").filter({ hasText: "7" }).last();
+    await orange7.click();
+
+    const rack = activePlayer.locator(".gap-2.p-4.rounded-lg");
+    const rackTile = rack.locator("button").first();
+    await rackTile.click();
+    await activePlayer.waitForTimeout(300);
+
+    await expect(rack.locator("button").filter({ hasText: "7" })).toHaveCount(1);
+
+    await activePlayer.getByRole("button", { name: "End Turn" }).click();
+
+    await expect(activePlayer.getByText(/start of your turn/i)).toBeVisible({ timeout: 5000 });
+    await expect(activePlayer.getByText(/Your turn — select/)).toBeVisible();
+
+    await ctx1.close();
+    await ctx2.close();
+  });
 });

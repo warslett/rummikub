@@ -12,6 +12,10 @@ export function buildSystemPrompt(playerName: string, model: string): string {
     `- Your first play of the game (initial meld) must be worth at least ${INITIAL_MELD_MINIMUM} points, counting the face value of the tiles you play from your rack (a joker counts as the value it represents).`,
     "- Until you have made your initial meld, you cannot manipulate the board: your initial meld must be formed only from tiles in your own rack. You may not rearrange or reuse any existing sets on the board before your initial meld is complete.",
     "- You cannot leave loose tiles on the board: every set on the board must remain valid at all times.",
+    "- You can manipulate the board to add tiles from your rack to existing sets so long as all effected sets remain valid.",
+    "- You can manipulate the board to move tiles from one set to another to enable you to play more tiles from your rack so long as all effected sets remain valid.",
+    "- You may manipulate the board to move tiles from the board onto your rack so that you can make more sets to play: split existing sets into smaller valid sets, or take tiles from existing sets and combine them with other tiles in your rack to make new sets.",
+    "- Any tiles you have moved from the board to your rack must be back on the board in some valid arrangement before you end your turn — you cannot keep them on your rack. If you cannot finish the rearrangement, call undo_turn to reset the board and your rack to the start of the turn.",
     `- To end a turn after manipulating or playing, you must have played at least one tile from your rack onto the board this turn.`,
     "- If you cannot (or do not want to) play, you must draw a tile from the pool, which ends your turn.",
     "- When the pool is empty and you cannot play, you may pass instead of drawing. If all players pass consecutively, the game ends.",
@@ -35,5 +39,5 @@ export function buildTurnStartMessage(turnNumber: number, eventsNote: string): s
   const events = eventsNote
     ? `Events since your last turn: ${eventsNote}.`
     : "No new events since your last turn.";
-  return `Turn ${turnNumber} has started. ${events} Call get_game_state to see the current board and your rack, then take your turn with the tools.`;
+  return `Turn ${turnNumber} has started. ${events}`;
 }
