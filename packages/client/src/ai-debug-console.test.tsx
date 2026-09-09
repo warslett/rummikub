@@ -17,6 +17,7 @@ import type { AiDebugItem, AiDebugEventPayload, AiDebugHistoryPayload, Tile, Pla
 
 const RED_7: Tile = { id: "red-7-a", color: "red", value: 7 };
 const BLUE_2: Tile = { id: "blue-2-a", color: "blue", value: 2 };
+const JOKER: Tile = { id: "joker-1", color: "joker", value: 0 };
 
 function makeItem(type: AiDebugItem["type"], text: string): AiDebugItem {
   return { type, text, ts: "2026-01-01T00:00:00.000Z" };
@@ -147,6 +148,40 @@ describe("AiDebugConsole", () => {
     );
     expect(html).toContain('aria-label="red 7"');
     expect(html).toContain('aria-label="blue 2"');
+  });
+
+  it("should render rack tiles as compact tiles at half the size of board tiles, without the full tile svg", () => {
+    const html = renderConsole(
+      makeDebugContextValue({ racks: { "ai-1": [RED_7] } })
+    );
+    expect(html).toContain("w-[25px] h-[35px]");
+    expect(html).not.toContain("<svg");
+  });
+
+  it("should render rack tiles as simple squares with the tile background colour, slightly rounded corners and a bold centred number", () => {
+    const html = renderConsole(
+      makeDebugContextValue({ racks: { "ai-1": [RED_7] } })
+    );
+    expect(html).toContain("bg-[#FAF3E0]");
+    expect(html).toContain("rounded-sm");
+    expect(html).toContain("font-bold");
+    expect(html).toContain(">7<");
+  });
+
+  it("should colour the rack tile number with the tile colour", () => {
+    const html = renderConsole(
+      makeDebugContextValue({ racks: { "ai-1": [RED_7, BLUE_2] } })
+    );
+    expect(html).toContain("#E02020");
+    expect(html).toContain("#0055A4");
+  });
+
+  it("should render the joker as a simple star symbol", () => {
+    const html = renderConsole(
+      makeDebugContextValue({ racks: { "ai-1": [JOKER] } })
+    );
+    expect(html).toContain('aria-label="Joker"');
+    expect(html).toContain("★");
   });
 
   it("should render a sensible empty state before the AI's first turn", () => {

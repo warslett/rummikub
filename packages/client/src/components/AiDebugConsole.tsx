@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useAiDebug, isNearBottom } from "../contexts/AiDebugContext";
-import { TileComponent } from "./GameBoard";
-import type { AiDebugItem } from "@rummikub/shared";
+import { TEXT_COLORS } from "./TileSvg";
+import type { AiDebugItem, Tile } from "@rummikub/shared";
 
 const ITEM_STYLES: Record<AiDebugItem["type"], string> = {
   prompt: "bg-blue-900/40 border border-blue-700 rounded-lg px-3 py-2 text-left",
@@ -16,6 +16,21 @@ const ITEM_LABELS: Record<AiDebugItem["type"], string> = {
   tool_call: "Tool call",
   response: "Response",
 };
+
+function MiniTile({ tile }: { tile: Tile }) {
+  const isJokerTile = tile.color === "joker";
+  const textColour = tile.color === "joker" ? "#333333" : TEXT_COLORS[tile.color];
+
+  return (
+    <span
+      aria-label={isJokerTile ? "Joker" : `${tile.color} ${tile.value}`}
+      className="inline-flex items-center justify-center w-[25px] h-[35px] bg-[#FAF3E0] rounded-sm font-bold text-xs"
+      style={{ color: textColour }}
+    >
+      {isJokerTile ? "★" : tile.value}
+    </span>
+  );
+}
 
 function AiDebugItemView({ item }: { item: AiDebugItem }) {
   return (
@@ -115,7 +130,7 @@ export function AiDebugConsole({ playerName, model }: { playerName: string; mode
         <div className="text-xs text-gray-400 mb-1">Rack ({rack.length} tiles)</div>
         <div className="flex flex-wrap gap-1 max-h-[84px] overflow-y-auto">
           {rack.map((tile) => (
-            <TileComponent key={tile.id} tile={tile} selected={false} onClick={() => {}} />
+            <MiniTile key={tile.id} tile={tile} />
           ))}
         </div>
       </div>

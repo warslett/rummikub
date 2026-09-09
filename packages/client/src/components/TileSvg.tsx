@@ -7,7 +7,7 @@ interface TileSvgProps {
   displayValue?: string;
 }
 
-const TEXT_COLORS: Record<Color, string> = {
+export const TEXT_COLORS: Record<Color, string> = {
   red: "#E02020",
   blue: "#0055A4",
   orange: "#F5A623",
