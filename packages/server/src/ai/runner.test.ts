@@ -319,6 +319,47 @@ describe("AiTurnRunner", () => {
       getProviderSpy.mockRestore();
     });
 
+    it("should include every opponent's events in each AI's events note", async () => {
+      game.addPlayer("p1", "Alice");
+      const ai1 = game.addAiPlayer("model-1");
+      const ai2 = game.addAiPlayer("model-2");
+      game.start();
+      game.seedGame({
+        board: [],
+        racks: {
+          p1: [P1_TILE],
+          [ai1.id]: [],
+          [ai2.id]: [{ id: "black-2-a", color: "black", value: 2 }],
+        },
+        pool: [
+          { id: "red-1-a", color: "red", value: 1 },
+          { id: "red-2-a", color: "red", value: 2 },
+          { id: "red-3-a", color: "red", value: 3 },
+          { id: "red-4-a", color: "red", value: 4 },
+        ],
+        currentTurnPlayerId: ai1.id,
+        hasInitialMeld: { p1: true, [ai1.id]: true, [ai2.id]: true },
+      });
+
+      const contexts: (TurnContext | undefined)[] = [];
+      const stubProvider = createContextCapturingProvider(contexts);
+      const getProviderSpy = vi.spyOn(providersModule, "getProvider").mockReturnValue(stubProvider);
+
+      // AI1 (turn 1) and AI2 (turn 2) draw back-to-back, then it is Alice's turn
+      await maybeRunNextTurn(io, game, "TEST01");
+      // Alice draws, then AI1 (turn 3) and AI2 (turn 4) draw again
+      game.drawTile("p1");
+      await maybeRunNextTurn(io, game, "TEST01");
+
+      expect(contexts).toHaveLength(4);
+      expect(contexts[2]?.eventsNote).toContain(`${ai2.name} drew a tile`);
+      expect(contexts[2]?.eventsNote).toContain("Alice drew a tile");
+      expect(contexts[3]?.eventsNote).toContain("Alice drew a tile");
+      expect(contexts[3]?.eventsNote).toContain(`${ai1.name} drew a tile`);
+
+      getProviderSpy.mockRestore();
+    });
+
     it("should describe an opponent's play as board changes rather than a tile count", async () => {
       game.addPlayer("p1", "Alice");
       const ai = game.addAiPlayer("test-model");

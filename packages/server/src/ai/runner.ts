@@ -23,7 +23,8 @@ interface TurnObservation {
 interface GameTurnTracking {
   roundNumber: number;
   turnNumber: number;
-  observation: TurnObservation | null;
+  baseline: TurnObservation;
+  observations: Map<string, TurnObservation>;
 }
 
 const turnTracking = new Map<string, GameTurnTracking>();
@@ -97,16 +98,21 @@ export async function maybeRunNextTurn(
 
       let tracking = turnTracking.get(gameCode);
       if (!tracking || tracking.roundNumber !== state.roundNumber) {
-        tracking = { roundNumber: state.roundNumber, turnNumber: 0, observation: null };
+        tracking = {
+          roundNumber: state.roundNumber,
+          turnNumber: 0,
+          baseline: observe(game),
+          observations: new Map(),
+        };
         turnTracking.set(gameCode, tracking);
       }
 
-      const events = tracking.observation ? diffEvents(tracking.observation, state, currentPlayer.id) : [];
+      const previous = tracking.observations.get(currentPlayer.id) ?? tracking.baseline;
+      const events = diffEvents(previous, state, currentPlayer.id);
       const turnNumber = tracking.turnNumber + 1;
       const context: TurnContext = { turnNumber, eventsNote: events.join("; ") };
 
       tracking.turnNumber = turnNumber;
-      tracking.observation = observe(game);
 
       const provider = getProvider(aiConfig.provider);
       const controller = new AiTurnController(io, game, gameCode, currentPlayer.id);
@@ -138,6 +144,8 @@ export async function maybeRunNextTurn(
         console.error(`AI error for ${currentPlayer.name}: ${message}`);
         break;
       }
+
+      tracking.observations.set(currentPlayer.id, observe(game));
     }
   } finally {
     busyGames.delete(gameCode);

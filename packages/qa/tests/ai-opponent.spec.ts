@@ -577,4 +577,73 @@ test.describe("AI Player Infrastructure", () => {
 
     await ctx.close();
   });
+
+  test("TC-AI-16: Events note lists every opponent's activity since that AI's last turn", async ({ browser }) => {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+
+    const gameCode = await createGame(page, "Alice");
+    await addAiPlayer(page, undefined, "Bot One");
+    await addAiPlayer(page, undefined, "Bot Two");
+    await startGameWithAi(page);
+
+    const gameState = await getGameStateFromServer(gameCode);
+    const humanPlayer = gameState.players.find((p: { isAI?: boolean }) => !p.isAI);
+    const aiPlayers = gameState.players.filter((p: { isAI?: boolean }) => p.isAI);
+    const ai1 = aiPlayers[0];
+    const ai2 = aiPlayers[1];
+
+    const pool = Array.from({ length: 12 }, (_, i) => ({
+      id: `blue-${i + 1}-a`,
+      color: "blue",
+      value: (i % 13) + 1,
+    }));
+
+    // Turn order: Alice -> Bot One -> Bot Two. Both AIs draw on every turn.
+    await seedGameServer(gameCode, {
+      board: [],
+      racks: {
+        [humanPlayer.id]: [{ id: "red-1-a", color: "red", value: 1 }],
+        [ai1.id]: [{ id: "black-1-a", color: "black", value: 1 }],
+        [ai2.id]: [{ id: "black-2-a", color: "black", value: 2 }],
+      },
+      pool,
+      currentTurnPlayerId: ai1.id,
+      hasInitialMeld: {
+        [humanPlayer.id]: true,
+        [ai1.id]: true,
+        [ai2.id]: true,
+      },
+      aiScripts: {
+        [ai1.id]: [{ action: "drawTile" }],
+        [ai2.id]: [{ action: "drawTile" }],
+      },
+    });
+
+    // Seeding runs AI turns 1 (Bot One) and 2 (Bot Two); wait for Alice's turn
+    await expect(page.getByText(/Your turn/i).first()).toBeVisible({ timeout: 10000 });
+
+    // Alice draws, which runs AI turns 3 (Bot One) and 4 (Bot Two)
+    await page.getByRole("button", { name: "Draw Tile" }).click();
+    await expect(page.getByText(/Your turn/i).first()).toBeVisible({ timeout: 10000 });
+
+    // Bot One's turn-3 prompt covers the full round since its turn 1
+    await page.getByTestId("ai-debug-player").nth(0).click();
+    const consolePanel = page.getByTestId("ai-debug-console");
+    await expect(consolePanel).toBeVisible();
+    await expect(consolePanel.getByText(ai1.name)).toBeVisible();
+    const ai1Turn3Prompt = consolePanel.locator('[data-item-type="prompt"]').filter({ hasText: "Turn 3" });
+    await expect(ai1Turn3Prompt).toContainText("Alice drew a tile");
+    await expect(ai1Turn3Prompt).toContainText(`${ai2.name} drew a tile`);
+
+    // Switch to Bot Two: its turn-4 prompt must also cover the whole round,
+    // including Alice's draw — not just Bot One's activity
+    await page.getByTestId("ai-debug-player").nth(1).click();
+    await expect(consolePanel.getByText(ai2.name)).toBeVisible();
+    const ai2Turn4Prompt = consolePanel.locator('[data-item-type="prompt"]').filter({ hasText: "Turn 4" });
+    await expect(ai2Turn4Prompt).toContainText("Alice drew a tile");
+    await expect(ai2Turn4Prompt).toContainText(`${ai1.name} drew a tile`);
+
+    await ctx.close();
+  });
 });
