@@ -1,9 +1,65 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Server as SocketIOServer } from "socket.io";
 import { Game } from "../game.js";
-import { maybeRunNextTurn, resetTurnContext, resetAiErrors, _resetAiRunnerState } from "./runner.js";
+import {
+  maybeRunNextTurn,
+  resetTurnContext,
+  resetAiErrors,
+  restoreAiState,
+  unloadAiState,
+  purgeAiState,
+  resumePendingAiTurns,
+  _resetAiRunnerState,
+} from "./runner.js";
 import * as providersModule from "./providers/index.js";
 import type { TurnContext } from "./providers/types.js";
+import {
+  setAiStore,
+  flushAiWrites,
+  _clearAiWriteQueues,
+  NoopAiStore,
+} from "../storage/aiStore.js";
+import type { AiTurnTrackingData, AiTurnTrackingRecord, AiErrorRecord } from "../storage/aiStore.js";
+
+class FakeAiStore extends NoopAiStore {
+  tracking = new Map<string, AiTurnTrackingData>();
+  errors = new Map<string, AiErrorRecord>();
+
+  override async upsertTurnTracking(gameCode: string, data: AiTurnTrackingData): Promise<void> {
+    this.tracking.set(gameCode, JSON.parse(JSON.stringify(data)) as AiTurnTrackingData);
+  }
+
+  override async loadAllTurnTracking(): Promise<AiTurnTrackingRecord[]> {
+    return [...this.tracking.entries()].map(([gameCode, data]) => ({
+      gameCode,
+      data: JSON.parse(JSON.stringify(data)) as AiTurnTrackingData,
+    }));
+  }
+
+  override async deleteTurnTracking(gameCode: string): Promise<void> {
+    this.tracking.delete(gameCode);
+  }
+
+  override async upsertAiError(gameCode: string, playerId: string, message: string): Promise<void> {
+    this.errors.set(`${gameCode}:${playerId}`, { gameCode, playerId, message });
+  }
+
+  override async loadAllAiErrors(): Promise<AiErrorRecord[]> {
+    return [...this.errors.values()].map((record) => ({ ...record }));
+  }
+
+  override async deleteAiError(gameCode: string, playerId: string): Promise<void> {
+    this.errors.delete(`${gameCode}:${playerId}`);
+  }
+
+  override async deleteGameAiErrors(gameCode: string): Promise<void> {
+    for (const key of [...this.errors.keys()]) {
+      if (key.startsWith(`${gameCode}:`)) {
+        this.errors.delete(key);
+      }
+    }
+  }
+}
 
 function createStubIo() {
   const emittedEvents: { event: string; data: unknown }[] = [];
@@ -498,6 +554,202 @@ describe("AiTurnRunner", () => {
       expect(contexts[1]?.eventsNote).toBe("");
 
       getProviderSpy.mockRestore();
+    });
+  });
+
+  describe("persistence", () => {
+    let store: FakeAiStore;
+
+    beforeEach(() => {
+      _clearAiWriteQueues();
+      store = new FakeAiStore();
+      setAiStore(store);
+    });
+
+    afterEach(() => {
+      setAiStore(new NoopAiStore());
+      _clearAiWriteQueues();
+    });
+
+    function seedDrawTurn(aiId: string) {
+      game.seedGame({
+        board: [],
+        racks: { p1: [{ id: "black-1-a", color: "black", value: 1 }], [aiId]: [] },
+        pool: [
+          { id: "red-1-a", color: "red", value: 1 },
+          { id: "red-2-a", color: "red", value: 2 },
+        ],
+        currentTurnPlayerId: aiId,
+        hasInitialMeld: { p1: true, [aiId]: true },
+      });
+    }
+
+    function createDrawingProvider(contexts: (TurnContext | undefined)[]) {
+      return {
+        takeTurn: vi.fn().mockImplementation(async (controller: { drawTile(): unknown }, context?: TurnContext) => {
+          contexts.push(context);
+          controller.drawTile();
+        }),
+      };
+    }
+
+    it("should persist turn tracking and continue turn numbering after a restore", async () => {
+      game.addPlayer("p1", "Alice");
+      const ai = game.addAiPlayer("test-model");
+      game.start();
+      seedDrawTurn(ai.id);
+
+      const contexts: (TurnContext | undefined)[] = [];
+      const provider = createDrawingProvider(contexts);
+      const spy = vi.spyOn(providersModule, "getProvider").mockReturnValue(provider);
+
+      await maybeRunNextTurn(io, game, "TEST01");
+      await flushAiWrites();
+      expect(store.tracking.get("TEST01")?.turnNumber).toBe(1);
+
+      unloadAiState();
+      await restoreAiState();
+
+      game.drawTile("p1");
+      await maybeRunNextTurn(io, game, "TEST01");
+
+      expect(contexts).toHaveLength(2);
+      expect(contexts[1]?.turnNumber).toBe(2);
+      spy.mockRestore();
+    });
+
+    it("should persist an AI error and keep the game paused after a restore", async () => {
+      game.addPlayer("p1", "Alice");
+      const ai = game.addAiPlayer("failing-model");
+      game.start();
+      seedDrawTurn(ai.id);
+
+      const failingProvider = {
+        takeTurn: vi.fn().mockRejectedValue(new Error("boom")),
+      };
+      const spy = vi.spyOn(providersModule, "getProvider").mockReturnValue(failingProvider);
+
+      await maybeRunNextTurn(io, game, "TEST01");
+      await flushAiWrites();
+      expect(store.errors.get(`TEST01:${ai.id}`)?.message).toBe("boom");
+
+      unloadAiState();
+      await restoreAiState();
+
+      failingProvider.takeTurn.mockClear();
+      await maybeRunNextTurn(io, game, "TEST01");
+      expect(failingProvider.takeTurn).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
+
+    it("should delete persisted turn tracking and errors on reset", async () => {
+      store.tracking.set("TEST01", {
+        roundNumber: 1,
+        turnNumber: 2,
+        baseline: { boardTileCount: 0, consecutivePasses: 0, rackSizes: {} },
+        observations: {},
+      });
+      store.errors.set("TEST01:ai1", { gameCode: "TEST01", playerId: "ai1", message: "boom" });
+
+      resetTurnContext("TEST01");
+      resetAiErrors("TEST01");
+      await flushAiWrites();
+
+      expect(store.tracking.has("TEST01")).toBe(false);
+      expect(store.errors.size).toBe(0);
+    });
+
+    it("should purge all persisted AI state for a game on purgeAiState", async () => {
+      store.tracking.set("TEST01", {
+        roundNumber: 1,
+        turnNumber: 2,
+        baseline: { boardTileCount: 0, consecutivePasses: 0, rackSizes: {} },
+        observations: {},
+      });
+      store.errors.set("TEST01:ai1", { gameCode: "TEST01", playerId: "ai1", message: "boom" });
+      store.tracking.set("OTHER1", {
+        roundNumber: 1,
+        turnNumber: 1,
+        baseline: { boardTileCount: 0, consecutivePasses: 0, rackSizes: {} },
+        observations: {},
+      });
+
+      purgeAiState("TEST01");
+      await flushAiWrites();
+
+      expect(store.tracking.has("TEST01")).toBe(false);
+      expect(store.tracking.has("OTHER1")).toBe(true);
+      expect(store.errors.size).toBe(0);
+    });
+  });
+
+  describe("resumePendingAiTurns", () => {
+    function seedDrawTurn(aiId: string) {
+      game.seedGame({
+        board: [],
+        racks: { p1: [{ id: "black-1-a", color: "black", value: 1 }], [aiId]: [] },
+        pool: [
+          { id: "red-1-a", color: "red", value: 1 },
+          { id: "red-2-a", color: "red", value: 2 },
+        ],
+        currentTurnPlayerId: aiId,
+        hasInitialMeld: { p1: true, [aiId]: true },
+      });
+    }
+
+    it("should run a turn for a restored game whose current player is AI", async () => {
+      game.addPlayer("p1", "Alice");
+      const ai = game.addAiPlayer("test-model");
+      game.start();
+      seedDrawTurn(ai.id);
+
+      const provider = {
+        takeTurn: vi.fn().mockImplementation(async (controller: { drawTile(): unknown }) => {
+          controller.drawTile();
+        }),
+      };
+      const spy = vi.spyOn(providersModule, "getProvider").mockReturnValue(provider);
+
+      await resumePendingAiTurns(io, [game]);
+
+      expect(provider.takeTurn).toHaveBeenCalledTimes(1);
+      expect(game.getPlayerState("p1").isYourTurn).toBe(true);
+      spy.mockRestore();
+    });
+
+    it("should not run for a game whose current player is human", async () => {
+      game.addPlayer("p1", "Alice");
+      game.addAiPlayer("test-model");
+      game.start();
+
+      const getProviderSpy = vi.spyOn(providersModule, "getProvider");
+      await resumePendingAiTurns(io, [game]);
+
+      expect(getProviderSpy).not.toHaveBeenCalled();
+      getProviderSpy.mockRestore();
+    });
+
+    it("should not run when the current AI player has a persisted error", async () => {
+      const store = new FakeAiStore();
+      setAiStore(store);
+      try {
+        game.addPlayer("p1", "Alice");
+        const ai = game.addAiPlayer("failing-model");
+        game.start();
+        seedDrawTurn(ai.id);
+        store.errors.set(`TEST01:${ai.id}`, { gameCode: "TEST01", playerId: ai.id, message: "boom" });
+        await restoreAiState();
+
+        const provider = { takeTurn: vi.fn() };
+        const spy = vi.spyOn(providersModule, "getProvider").mockReturnValue(provider);
+
+        await resumePendingAiTurns(io, [game]);
+
+        expect(provider.takeTurn).not.toHaveBeenCalled();
+        spy.mockRestore();
+      } finally {
+        setAiStore(new NoopAiStore());
+      }
     });
   });
 });

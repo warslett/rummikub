@@ -5,7 +5,33 @@ import * as runnerModule from "./ai/runner.js";
 import * as llmModule from "./ai/providers/llm.js";
 import * as debugModule from "./ai/debug.js";
 import { _clearAllTranscripts } from "./ai/debug.js";
+import {
+  setAiStore,
+  flushAiWrites,
+  _clearAiWriteQueues,
+  NoopAiStore,
+} from "./storage/aiStore.js";
 import type { GameLobbyStatePayload, AiModelsPayload, AiDebugHistoryPayload } from "@rummikub/shared";
+
+class RecordingAiStore extends NoopAiStore {
+  calls: string[] = [];
+
+  override async deleteConversationsBeforeRound(gameCode: string, round: number): Promise<void> {
+    this.calls.push(`conv:${gameCode}:${round}`);
+  }
+
+  override async deleteTranscriptsBeforeRound(gameCode: string, round: number): Promise<void> {
+    this.calls.push(`trans:${gameCode}:${round}`);
+  }
+
+  override async deleteTurnTracking(gameCode: string): Promise<void> {
+    this.calls.push(`track:${gameCode}`);
+  }
+
+  override async deleteGameAiErrors(gameCode: string): Promise<void> {
+    this.calls.push(`err:${gameCode}`);
+  }
+}
 
 interface MockSocket {
   id: string;
@@ -243,6 +269,34 @@ describe("Socket Handlers AI Integration", () => {
     expect(resetTurnContextSpy).toHaveBeenCalledWith(gameCode);
     expect(resetAiErrorsSpy).toHaveBeenCalledWith(gameCode);
     expect(runnerSpy).toHaveBeenCalled();
+  });
+
+  it("should delete persisted AI rows for older rounds on game:playAgain", async () => {
+    const store = new RecordingAiStore();
+    setAiStore(store);
+    _clearAiWriteQueues();
+    const runnerSpy = vi.spyOn(runnerModule, "maybeRunNextTurn").mockResolvedValue();
+    try {
+      socket.callbacks["game:create"]({ playerName: "Alice" });
+      const createEvt = socket.emitted.find((e) => e.event === "game:created");
+      const gameCode = (createEvt?.data as { gameCode: string }).gameCode;
+      const game = manager.getGame(gameCode)!;
+      game.addAiPlayer("test-model");
+      game.start();
+      game.getState().phase = "ended";
+
+      socket.callbacks["game:playAgain"]();
+      await flushAiWrites();
+
+      expect(store.calls).toContain(`conv:${gameCode}:2`);
+      expect(store.calls).toContain(`trans:${gameCode}:2`);
+      expect(store.calls).toContain(`track:${gameCode}`);
+      expect(store.calls).toContain(`err:${gameCode}`);
+    } finally {
+      setAiStore(new NoopAiStore());
+      _clearAiWriteQueues();
+      runnerSpy.mockRestore();
+    }
   });
 
   it("should call maybeRunNextTurn after game:reconnect", () => {

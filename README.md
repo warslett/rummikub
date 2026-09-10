@@ -87,7 +87,7 @@ docs/              — Project documentation
 
 ## Persistence
 
-The production stack (`docker compose up`) runs a `postgres` service with a named volume (`pgdata`) and passes `DATABASE_URL` to the server. Every game mutation is written through to the `games` table (full `GameState` as JSONB); on boot the server restores all non-expired games, so a `docker compose restart` does not lose games — players reconnect via the game URL and continue mid-turn (racks, board, pool, scores, turn snapshot and undo all intact). Games inactive for over 24 hours are deleted from memory and the database.
+The production stack (`docker compose up`) runs a `postgres` service with a named volume (`pgdata`) and passes `DATABASE_URL` to the server. Every game mutation is written through to the `games` table (full `GameState` as JSONB); on boot the server restores all non-expired games, so a `docker compose restart` does not lose games — players reconnect via the game URL and continue mid-turn (racks, board, pool, scores, turn snapshot and undo all intact). The AI session is persisted alongside the game (conversations, turn tracking, AI error/pause state and debug transcripts), so each AI resumes with its prior memory and turn numbering after a restart. Games inactive for over 24 hours are deleted from memory and the database (cascade-deleting their AI rows).
 
 When running the server directly, unset `DATABASE_URL` to run in-memory only (no database). Under `docker compose up`, the `DATABASE_URL` mapping always supplies a value (an empty `DATABASE_URL=` is treated as unset and falls back to the bundled postgres service), so opting out of persistence requires removing/commenting the `DATABASE_URL` mapping for the `server` service in `docker-compose.yml` (and optionally not starting the `postgres` service).
 
@@ -101,6 +101,8 @@ docker compose exec postgres pg_dump -U rummikub rummikub > backup.sql
 cat backup.sql | docker compose exec -T postgres psql -U rummikub -d rummikub
 ```
 
+A dump includes the AI session tables, so a restored database also restores each AI's conversation, turn tracking and debug transcript.
+
 ## Playing against AI models
 
 Set the provider to `llm` and point it at any OpenAI-compatible gateway:
@@ -113,13 +115,13 @@ AI_DEFAULT_MODEL=claude-sonnet-5 \
 docker compose -f docker-compose.dev.yml up
 ```
 
-Then create a game, add an AI player in the lobby (pick a model from the list), and start. The AI takes its turns through a tool-calling agent loop: it receives the rules and its private state in a system prompt, and plays by calling the same verbs a human has (`get_game_state`, `play_sets`, `manipulate_board`, `undo_turn`, `draw_tile`, `end_turn`, `pass_turn`). Invalid moves are rejected with the same messages a human would see, returned as tool results so the model can retry. The conversation persists across the AI's turns within a round and is reset on Play Again.
+Then create a game, add an AI player in the lobby (pick a model from the list), and start. The AI takes its turns through a tool-calling agent loop: it receives the rules and its private state in a system prompt, and plays by calling the same verbs a human has (`get_game_state`, `play_sets`, `manipulate_board`, `undo_turn`, `draw_tile`, `end_turn`, `pass_turn`). Invalid moves are rejected with the same messages a human would see, returned as tool results so the model can retry. The conversation persists across the AI's turns within a round and is reset on Play Again, and it is stored in the database, so a server restart no longer loses the AI's memory or its turn numbering.
 
 Requests sent to the gateway identify the app with a `User-Agent: rummikub-ai/1.0` header and carry a stable `x-opencode-session` per AI conversation (one per game round and player). OpenCode Go requires both; other OpenAI-compatible gateways ignore them.
 
 ### Watching the AI's session
 
-Set `AI_DEBUG=true` and click an AI player in the game UI (the top player strip). A debug console opens anchored bottom-right, showing that AI's rack and a readable transcript of its session with the model — Prompt items (system prompt, turn-start notes, corrective prompts), Thinking items (chain-of-thought, when the model provides it), Tool call items (tool name only) and Response items. The transcript scrolls back to the start of the round and streams live; spectators get the same console. No server logs are involved. If the model or gateway fails, the game pauses and all players see an error banner (`ai:error`).
+Set `AI_DEBUG=true` and click an AI player in the game UI (the top player strip). A debug console opens anchored bottom-right, showing that AI's rack and a readable transcript of its session with the model — Prompt items (system prompt, turn-start notes, corrective prompts), Thinking items (chain-of-thought, when the model provides it), Tool call items (tool name only) and Response items. The transcript scrolls back to the start of the round and streams live; spectators get the same console. No server logs are involved. The transcript is persisted, so the full round history is still there after a server restart. If the model or gateway fails, the game pauses and all players see an error banner (`ai:error`).
 
 ### Tuning AI robustness
 
@@ -128,7 +130,7 @@ The `llm` provider is hardened for real-world play:
 - **Transient errors are retried**: HTTP 429, 5xx, network errors and request timeouts are retried up to `AI_MAX_RETRIES` times with exponential backoff (`AI_RETRY_BASE_MS` ×2 + jitter). Auth errors (401/403) and context-length errors pause immediately — retrying won't help.
 - **Runaway loops are capped**: `AI_MAX_TOOL_ITERATIONS` (default 25) bounds the tool-call loop per turn. If a model needs more calls for a complex manipulation, raise it via env. Two consecutive completions with only malformed tool calls (`AI_MALFORMED_LIMIT`) also pause the game — the model is not coping.
 - **Long conversations are compacted**: when the estimated token count (chars/4) exceeds `AI_CONTEXT_TOKEN_LIMIT`, older exchanges are folded into a summary (generated by the same model) and the last `AI_COMPACT_KEEP_TURNS` exchanges are kept. If summarization fails, the conversation is truncated instead of pausing.
-- **What pausing looks like**: any unrecoverable failure emits `ai:error` to all players and the game shows a stuck banner ("AI player stuck: … Restart the server to recover."). There is no auto-draw and no intervention endpoint — restart the server to recover (AI conversations are in-memory and lost on restart, unlike game state which is now persisted; AI session persistence is planned in a follow-up).
+- **What pausing looks like**: any unrecoverable failure emits `ai:error` to all players and the game shows a stuck banner ("AI player stuck: … Restart the server to recover."). There is no auto-draw and no intervention endpoint. The paused state is persisted, so a server restart does **not** clear it or re-run the failed AI turn — the game stays paused until you start a new round with **Play Again**, which resets the AI's error, conversation and turn tracking.
 
 ## Documentation
 

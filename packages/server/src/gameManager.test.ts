@@ -134,7 +134,7 @@ describe("GameManager", () => {
         game.getState().lastActivityAt = now - 25 * 60 * 60 * 1000;
 
         const purgeGameSpy = vi.spyOn(llmModule, "purgeGame").mockImplementation(() => {});
-        const resetTurnContextSpy = vi.spyOn(runnerModule, "resetTurnContext").mockImplementation(() => {});
+        const purgeAiStateSpy = vi.spyOn(runnerModule, "purgeAiState").mockImplementation(() => {});
 
         const removed = manager.cleanupExpiredGames();
 
@@ -142,7 +142,7 @@ describe("GameManager", () => {
         expect(manager.getGame(stale.gameCode)).toBeUndefined();
         expect(manager.getGame(gameCode)).toBeDefined();
         expect(purgeGameSpy).toHaveBeenCalledWith(stale.gameCode);
-        expect(resetTurnContextSpy).toHaveBeenCalledWith(stale.gameCode);
+        expect(purgeAiStateSpy).toHaveBeenCalledWith(stale.gameCode);
         expect(purgeGameSpy).not.toHaveBeenCalledWith(gameCode);
       } finally {
         vi.useRealTimers();

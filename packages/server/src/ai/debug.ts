@@ -2,6 +2,7 @@ import type { Server as SocketIOServer } from "socket.io";
 import type { AiDebugItem, AiDebugEventPayload } from "@rummikub/shared";
 import { aiConfig } from "./config.js";
 import type { Game } from "../game.js";
+import { queueAiWrite, getAiStore } from "../storage/aiStore.js";
 
 const transcripts = new Map<string, AiDebugItem[]>();
 
@@ -25,6 +26,9 @@ export function recordDebugItem(
   items.push(recorded);
   transcripts.set(key, items);
 
+  const snapshot = items.map((entry) => ({ ...entry }));
+  queueAiWrite(`aitranscript:${state.id}`, () => getAiStore().upsertTranscript(key, snapshot));
+
   const player = state.players.find((p) => p.id === playerId);
   const payload: AiDebugEventPayload = {
     playerId,
@@ -33,6 +37,22 @@ export function recordDebugItem(
     rack: player ? [...player.rack] : [],
   };
   io.to(state.id).emit("ai:debug", payload);
+}
+
+export async function restoreTranscripts(): Promise<void> {
+  if (!aiConfig.debug) {
+    transcripts.clear();
+    return;
+  }
+  const records = await getAiStore().loadAllTranscripts();
+  transcripts.clear();
+  for (const record of records) {
+    transcripts.set(record.key, record.items);
+  }
+}
+
+export function unloadTranscripts(): void {
+  transcripts.clear();
 }
 
 export function getDebugTranscript(game: Game, playerId: string): AiDebugItem[] {
@@ -54,6 +74,9 @@ export function resetTranscripts(gameCode: string, roundNumber: number): void {
       transcripts.delete(key);
     }
   }
+  queueAiWrite(`aitranscript:${gameCode}`, () =>
+    getAiStore().deleteTranscriptsBeforeRound(gameCode, roundNumber)
+  );
 }
 
 export function purgeGame(gameCode: string): void {
@@ -62,6 +85,9 @@ export function purgeGame(gameCode: string): void {
       transcripts.delete(key);
     }
   }
+  queueAiWrite(`aitranscript:${gameCode}`, () =>
+    getAiStore().deleteGameTranscripts(gameCode)
+  );
 }
 
 export function _clearAllTranscripts(): void {

@@ -1,13 +1,29 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Server as SocketIOServer } from "socket.io";
 import type OpenAI from "openai";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
 import { RateLimitError, InternalServerError } from "openai";
 import { Game } from "../../game.js";
 import { AiTurnController } from "../controller.js";
-import { LlmProvider, resetConversations, purgeGame, _clearAllConversations } from "./llm.js";
+import {
+  LlmProvider,
+  resetConversations,
+  purgeGame,
+  restoreConversations,
+  unloadConversations,
+  _clearAllConversations,
+} from "./llm.js";
 import { getDebugTranscript, _clearAllTranscripts } from "../debug.js";
 import { toolSchemas } from "../tools.js";
 import { aiConfig } from "../config.js";
+import {
+  setAiStore,
+  flushAiWrites,
+  _clearAiWriteQueues,
+  NoopAiStore,
+  getAiStore,
+} from "../../storage/aiStore.js";
+import type { AiConversationRecord } from "../../storage/aiStore.js";
 import type { AiDebugEventPayload } from "@rummikub/shared";
 
 function createStubIo() {
@@ -97,6 +113,22 @@ const R7 = { id: "red-7-a", color: "red" as const, value: 7 as const };
 const R8 = { id: "red-8-a", color: "red" as const, value: 8 as const };
 const R9 = { id: "red-9-a", color: "red" as const, value: 9 as const };
 const POOL_TILE = { id: "blue-2-a", color: "blue" as const, value: 2 as const };
+
+class FakeAiStore extends NoopAiStore {
+  saved: AiConversationRecord[] = [];
+  seeded: AiConversationRecord[] = [];
+
+  override async upsertConversation(key: string, messages: ChatCompletionMessageParam[]): Promise<void> {
+    this.saved.push({ key, messages: JSON.parse(JSON.stringify(messages)) as ChatCompletionMessageParam[] });
+  }
+
+  override async loadAllConversations(): Promise<AiConversationRecord[]> {
+    return this.seeded.map((record) => ({
+      key: record.key,
+      messages: JSON.parse(JSON.stringify(record.messages)) as ChatCompletionMessageParam[],
+    }));
+  }
+}
 
 describe("LlmProvider", () => {
   let game: Game;
@@ -803,6 +835,139 @@ describe("LlmProvider", () => {
       client.responses.push(toolCallMessage([{ id: "call-3", name: "draw_tile", arguments: "{}" }]));
       await provider.takeTurn(new AiTurnController(io, otherGame, "OTHER1", otherAi.id), { turnNumber: 2, eventsNote: "" });
       expect(client.calls[2].messages.length).toBeGreaterThan(2);
+    });
+  });
+
+  describe("conversation persistence", () => {
+    let store: FakeAiStore;
+
+    beforeEach(() => {
+      _clearAiWriteQueues();
+      store = new FakeAiStore();
+      setAiStore(store);
+    });
+
+    afterEach(() => {
+      setAiStore(new NoopAiStore());
+      _clearAiWriteQueues();
+    });
+
+    it("should persist the conversation on creation and again at the end of a successful turn", async () => {
+      client.responses.push(toolCallMessage([{ id: "call-1", name: "draw_tile", arguments: "{}" }]));
+
+      await provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), {
+        turnNumber: 1,
+        eventsNote: "",
+      });
+      await flushAiWrites();
+
+      const key = `TEST01:1:${aiPlayerId}`;
+      const saved = store.saved.filter((s) => s.key === key);
+      expect(saved.length).toBeGreaterThanOrEqual(2);
+      expect(saved[0].messages).toHaveLength(1);
+      expect(saved[0].messages[0].role).toBe("system");
+
+      const last = saved[saved.length - 1].messages;
+      expect(last[0].role).toBe("system");
+      expect(last[last.length - 1].role).toBe("tool");
+      expect(last.some((m) => m.role === "user" && String(m.content).includes("Turn 1"))).toBe(true);
+    });
+
+    it("should persist the conversation even when the turn throws", async () => {
+      client.responses.push(plainMessage("Let me think about it..."), plainMessage("Still thinking..."));
+
+      await expect(
+        provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), { turnNumber: 1, eventsNote: "" })
+      ).rejects.toThrow(/no tool call/i);
+      await flushAiWrites();
+
+      const key = `TEST01:1:${aiPlayerId}`;
+      const last = store.saved.filter((s) => s.key === key).at(-1)!;
+      expect(last.messages[0].role).toBe("system");
+      expect(last.messages.some((m) => m.content === "Call a tool to take your turn.")).toBe(true);
+    });
+
+    it("should persist the compacted conversation in place of the full history", async () => {
+      vi.stubEnv("AI_CONTEXT_TOKEN_LIMIT", "50");
+      vi.stubEnv("AI_COMPACT_KEEP_TURNS", "1");
+      client.responses.push(
+        toolCallMessage([{ id: "call-1", name: "draw_tile", arguments: "{}" }]),
+        toolCallMessage([{ id: "call-2", name: "draw_tile", arguments: "{}" }]),
+        { choices: [{ message: { role: "assistant", content: "The player drew tiles." } }] },
+        toolCallMessage([{ id: "call-3", name: "draw_tile", arguments: "{}" }])
+      );
+
+      const controller = new AiTurnController(io, game, "TEST01", aiPlayerId);
+      await provider.takeTurn(controller, { turnNumber: 1, eventsNote: "" });
+      for (const turn of [2, 3]) {
+        game.seedGame({
+          board: [],
+          racks: { p1: [], [aiPlayerId]: [R7] },
+          pool: [POOL_TILE],
+          currentTurnPlayerId: aiPlayerId,
+          hasInitialMeld: { p1: true, [aiPlayerId]: true },
+        });
+        await provider.takeTurn(controller, { turnNumber: turn, eventsNote: "" });
+      }
+      await flushAiWrites();
+
+      const key = `TEST01:1:${aiPlayerId}`;
+      const compacted = store.saved
+        .filter((s) => s.key === key)
+        .some((s) => s.messages.some((m) => String(m.content).includes("[Summary of earlier conversation]")));
+      expect(compacted).toBe(true);
+    });
+
+    it("should restore conversations from the store on boot", async () => {
+      store.seeded.push({
+        key: `TEST01:1:${aiPlayerId}`,
+        messages: [
+          { role: "system", content: "RESTORED SYSTEM PROMPT" },
+          { role: "user", content: "Turn 1 has started (restored)" },
+        ],
+      });
+
+      await restoreConversations();
+
+      client.responses.push(toolCallMessage([{ id: "call-1", name: "draw_tile", arguments: "{}" }]));
+      await provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), {
+        turnNumber: 2,
+        eventsNote: "",
+      });
+
+      expect(client.calls[0].messages).toHaveLength(3);
+      expect(String(client.calls[0].messages[0].content)).toContain("RESTORED SYSTEM PROMPT");
+    });
+
+    it("should drop restored conversations on unloadConversations", async () => {
+      store.seeded.push({
+        key: `TEST01:1:${aiPlayerId}`,
+        messages: [{ role: "system", content: "RESTORED SYSTEM PROMPT" }],
+      });
+      await restoreConversations();
+      unloadConversations();
+
+      client.responses.push(toolCallMessage([{ id: "call-1", name: "draw_tile", arguments: "{}" }]));
+      await provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), {
+        turnNumber: 1,
+        eventsNote: "",
+      });
+
+      expect(String(client.calls[0].messages[0].content)).toContain("Sabra");
+      expect(client.calls[0].messages).toHaveLength(2);
+    });
+
+    it("should no-op when no store has been wired", async () => {
+      setAiStore(new NoopAiStore());
+      client.responses.push(toolCallMessage([{ id: "call-1", name: "draw_tile", arguments: "{}" }]));
+
+      await provider.takeTurn(new AiTurnController(io, game, "TEST01", aiPlayerId), {
+        turnNumber: 1,
+        eventsNote: "",
+      });
+      await flushAiWrites();
+
+      expect(getAiStore()).toBeInstanceOf(NoopAiStore);
     });
   });
 });

@@ -39,6 +39,38 @@ export async function ensureSchema(pool: pg.Pool = getPool()): Promise<void> {
       last_activity_at TIMESTAMPTZ NOT NULL
     )
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ai_conversations (
+      game_code TEXT NOT NULL REFERENCES games(game_code) ON DELETE CASCADE,
+      round_number INTEGER NOT NULL,
+      player_id TEXT NOT NULL,
+      messages JSONB NOT NULL,
+      PRIMARY KEY (game_code, round_number, player_id)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ai_turn_tracking (
+      game_code TEXT PRIMARY KEY REFERENCES games(game_code) ON DELETE CASCADE,
+      data JSONB NOT NULL
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ai_errors (
+      game_code TEXT NOT NULL REFERENCES games(game_code) ON DELETE CASCADE,
+      player_id TEXT NOT NULL,
+      message TEXT NOT NULL,
+      PRIMARY KEY (game_code, player_id)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ai_debug_transcripts (
+      game_code TEXT NOT NULL REFERENCES games(game_code) ON DELETE CASCADE,
+      round_number INTEGER NOT NULL,
+      player_id TEXT NOT NULL,
+      items JSONB NOT NULL,
+      PRIMARY KEY (game_code, round_number, player_id)
+    )
+  `);
 }
 
 export async function dbHealth(pool: pg.Pool = getPool()): Promise<boolean> {

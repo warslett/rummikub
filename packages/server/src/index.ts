@@ -3,9 +3,10 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { registerHandlers, manager } from "./handlers.js";
 import { emitPlayerStates } from "./emissions.js";
-import { maybeRunNextTurn } from "./ai/runner.js";
+import { maybeRunNextTurn, resumePendingAiTurns } from "./ai/runner.js";
 import { createGameStore } from "./storage/gameStore.js";
 import { bootPersistence, reloadGames } from "./storage/bootstrap.js";
+import { flushAiWrites } from "./storage/aiStore.js";
 import { dbHealth } from "./storage/db.js";
 import { storageConfig } from "./storage/config.js";
 
@@ -51,6 +52,7 @@ if (process.env.NODE_ENV === "test") {
 
   app.post("/test/reload", async (_req, res) => {
     const restored = await reloadGames(manager);
+    await resumePendingAiTurns(io, manager.getGames());
     res.json({ ok: true, restored });
   });
 }
@@ -60,6 +62,9 @@ async function start(): Promise<void> {
   const restored = await bootPersistence(manager, store);
   if (storageConfig.enabled) {
     console.log(`Restored ${restored} game(s) from database`);
+    void resumePendingAiTurns(io, manager.getGames()).catch((err) =>
+      console.error("Failed to resume AI turns:", err)
+    );
   }
 
   registerHandlers(io);
@@ -70,6 +75,7 @@ async function start(): Promise<void> {
     manager.stopCleanup();
     try {
       await manager.flushStorage();
+      await flushAiWrites();
       await store.close();
     } catch (err) {
       console.error("Error during shutdown:", err);

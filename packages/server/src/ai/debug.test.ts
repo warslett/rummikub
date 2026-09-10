@@ -6,9 +6,53 @@ import {
   getDebugTranscript,
   resetTranscripts,
   purgeGame,
+  restoreTranscripts,
+  unloadTranscripts,
   _clearAllTranscripts,
 } from "./debug.js";
-import type { AiDebugEventPayload } from "@rummikub/shared";
+import {
+  setAiStore,
+  flushAiWrites,
+  _clearAiWriteQueues,
+  NoopAiStore,
+} from "../storage/aiStore.js";
+import type { AiTranscriptRecord } from "../storage/aiStore.js";
+import type { AiDebugEventPayload, AiDebugItem } from "@rummikub/shared";
+
+class FakeAiStore extends NoopAiStore {
+  transcripts = new Map<string, AiDebugItem[]>();
+
+  override async upsertTranscript(key: string, items: AiDebugItem[]): Promise<void> {
+    this.transcripts.set(key, JSON.parse(JSON.stringify(items)) as AiDebugItem[]);
+  }
+
+  override async loadAllTranscripts(): Promise<AiTranscriptRecord[]> {
+    return [...this.transcripts.entries()].map(([key, items]) => ({
+      key,
+      items: JSON.parse(JSON.stringify(items)) as AiDebugItem[],
+    }));
+  }
+
+  override async deleteTranscriptsBeforeRound(gameCode: string, round: number): Promise<void> {
+    for (const key of [...this.transcripts.keys()]) {
+      if (!key.startsWith(`${gameCode}:`)) {
+        continue;
+      }
+      const keyRound = Number(key.split(":")[1]);
+      if (Number.isFinite(keyRound) && keyRound < round) {
+        this.transcripts.delete(key);
+      }
+    }
+  }
+
+  override async deleteGameTranscripts(gameCode: string): Promise<void> {
+    for (const key of [...this.transcripts.keys()]) {
+      if (key.startsWith(`${gameCode}:`)) {
+        this.transcripts.delete(key);
+      }
+    }
+  }
+}
 
 function createStubIo() {
   const emitted: { room: string; event: string; data: unknown }[] = [];
@@ -174,5 +218,104 @@ describe("AI debug bus", () => {
 
     expect(getDebugTranscript(game, aiPlayerId)).toEqual([]);
     expect(getDebugTranscript(other, otherAi.id).map((i) => i.text)).toEqual(["game B item"]);
+  });
+
+  describe("transcript persistence", () => {
+    let store: FakeAiStore;
+
+    beforeEach(() => {
+      _clearAiWriteQueues();
+      store = new FakeAiStore();
+      setAiStore(store);
+    });
+
+    afterEach(() => {
+      setAiStore(new NoopAiStore());
+      _clearAiWriteQueues();
+    });
+
+    it("should persist recorded items when debug is on", async () => {
+      const { game, aiPlayerId } = createAiGame();
+
+      recordDebugItem(io, game, aiPlayerId, { type: "prompt", text: "Turn 1 has started." });
+      recordDebugItem(io, game, aiPlayerId, { type: "tool_call", text: "draw_tile" });
+      await flushAiWrites();
+
+      const key = `TEST01:1:${aiPlayerId}`;
+      expect(store.transcripts.get(key)?.map((i) => i.text)).toEqual(["Turn 1 has started.", "draw_tile"]);
+    });
+
+    it("should not persist anything when debug is off", async () => {
+      vi.stubEnv("AI_DEBUG", "false");
+      const { game, aiPlayerId } = createAiGame();
+
+      recordDebugItem(io, game, aiPlayerId, { type: "prompt", text: "Turn 1 has started." });
+      await flushAiWrites();
+
+      expect(store.transcripts.size).toBe(0);
+    });
+
+    it("should delete older-round rows on resetTranscripts and all rows on purgeGame", async () => {
+      const item: AiDebugItem = { type: "prompt", text: "x", ts: "2024-01-01T00:00:00.000Z" };
+      store.transcripts.set("TEST01:1:p1", [item]);
+      store.transcripts.set("TEST01:2:p1", [item]);
+      store.transcripts.set("OTHER1:1:p1", [item]);
+
+      resetTranscripts("TEST01", 2);
+      await flushAiWrites();
+      expect(store.transcripts.has("TEST01:1:p1")).toBe(false);
+      expect(store.transcripts.has("TEST01:2:p1")).toBe(true);
+
+      purgeGame("TEST01");
+      await flushAiWrites();
+      expect(store.transcripts.has("TEST01:2:p1")).toBe(false);
+      expect(store.transcripts.has("OTHER1:1:p1")).toBe(true);
+    });
+
+    it("should restore transcripts from the store into the map", async () => {
+      const { game, aiPlayerId } = createAiGame();
+      store.transcripts.set(`TEST01:1:${aiPlayerId}`, [
+        { type: "prompt", text: "restored item", ts: "2024-01-01T00:00:00.000Z" },
+      ]);
+
+      await restoreTranscripts();
+
+      expect(getDebugTranscript(game, aiPlayerId).map((i) => i.text)).toEqual(["restored item"]);
+    });
+
+    it("should not restore transcripts when debug is off", async () => {
+      const { game, aiPlayerId } = createAiGame();
+      store.transcripts.set(`TEST01:1:${aiPlayerId}`, [
+        { type: "prompt", text: "restored item", ts: "2024-01-01T00:00:00.000Z" },
+      ]);
+
+      vi.stubEnv("AI_DEBUG", "false");
+      await restoreTranscripts();
+      vi.stubEnv("AI_DEBUG", "true");
+
+      expect(getDebugTranscript(game, aiPlayerId)).toEqual([]);
+    });
+
+    it("should preserve existing transcripts when loading them fails", async () => {
+      const { game, aiPlayerId } = createAiGame();
+      recordDebugItem(io, game, aiPlayerId, { type: "prompt", text: "existing item" });
+      vi.spyOn(store, "loadAllTranscripts").mockRejectedValue(new Error("db down"));
+
+      await expect(restoreTranscripts()).rejects.toThrow("db down");
+
+      expect(getDebugTranscript(game, aiPlayerId).map((i) => i.text)).toEqual(["existing item"]);
+    });
+
+    it("should drop all transcripts on unloadTranscripts", async () => {
+      const { game, aiPlayerId } = createAiGame();
+      store.transcripts.set(`TEST01:1:${aiPlayerId}`, [
+        { type: "prompt", text: "restored item", ts: "2024-01-01T00:00:00.000Z" },
+      ]);
+      await restoreTranscripts();
+
+      unloadTranscripts();
+
+      expect(getDebugTranscript(game, aiPlayerId)).toEqual([]);
+    });
   });
 });

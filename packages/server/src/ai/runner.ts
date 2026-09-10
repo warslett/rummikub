@@ -6,6 +6,8 @@ import { aiConfig } from "./config.js";
 import { getProvider } from "./providers/index.js";
 import { AiTurnController } from "./controller.js";
 import type { TurnContext } from "./providers/types.js";
+import { queueAiWrite, getAiStore } from "../storage/aiStore.js";
+import type { AiTurnTrackingData } from "../storage/aiStore.js";
 
 const busyGames = new Set<string>();
 const aiErrors = new Map<string, string>();
@@ -28,6 +30,37 @@ interface GameTurnTracking {
 }
 
 const turnTracking = new Map<string, GameTurnTracking>();
+
+function serializeTracking(tracking: GameTurnTracking): AiTurnTrackingData {
+  return {
+    roundNumber: tracking.roundNumber,
+    turnNumber: tracking.turnNumber,
+    baseline: tracking.baseline,
+    observations: Object.fromEntries(tracking.observations),
+  };
+}
+
+function deserializeTracking(data: AiTurnTrackingData): GameTurnTracking {
+  return {
+    roundNumber: data.roundNumber,
+    turnNumber: data.turnNumber,
+    baseline: data.baseline,
+    observations: new Map(Object.entries(data.observations)),
+  };
+}
+
+function persistTurnTracking(gameCode: string, tracking: GameTurnTracking): void {
+  const snapshot = JSON.parse(JSON.stringify(serializeTracking(tracking))) as AiTurnTrackingData;
+  queueAiWrite(`aitracking:${gameCode}`, () =>
+    getAiStore().upsertTurnTracking(gameCode, snapshot)
+  );
+}
+
+function persistAiError(gameCode: string, playerId: string, message: string): void {
+  queueAiWrite(`aierrors:${gameCode}`, () =>
+    getAiStore().upsertAiError(gameCode, playerId, message)
+  );
+}
 
 function observe(game: Game): TurnObservation {
   const state = game.getState();
@@ -105,6 +138,7 @@ export async function maybeRunNextTurn(
           observations: new Map(),
         };
         turnTracking.set(gameCode, tracking);
+        persistTurnTracking(gameCode, tracking);
       }
 
       const previous = tracking.observations.get(currentPlayer.id) ?? tracking.baseline;
@@ -113,6 +147,7 @@ export async function maybeRunNextTurn(
       const context: TurnContext = { turnNumber, eventsNote: events.join("; ") };
 
       tracking.turnNumber = turnNumber;
+      persistTurnTracking(gameCode, tracking);
 
       const provider = getProvider(aiConfig.provider);
       const controller = new AiTurnController(io, game, gameCode, currentPlayer.id);
@@ -121,6 +156,7 @@ export async function maybeRunNextTurn(
       } catch (err) {
         const message = (err as Error).message || "Unknown AI error";
         aiErrors.set(aiErrorKey(gameCode, currentPlayer.id), message);
+        persistAiError(gameCode, currentPlayer.id, message);
         const payload: AiErrorPayload = {
           playerId: currentPlayer.id,
           playerName: currentPlayer.name,
@@ -135,6 +171,7 @@ export async function maybeRunNextTurn(
       if (nextPlayer.id === currentPlayer.id && game.getState().phase === "playing") {
         const message = "AI completed turn without ending it or passing";
         aiErrors.set(aiErrorKey(gameCode, currentPlayer.id), message);
+        persistAiError(gameCode, currentPlayer.id, message);
         const payload: AiErrorPayload = {
           playerId: currentPlayer.id,
           playerName: currentPlayer.name,
@@ -146,14 +183,35 @@ export async function maybeRunNextTurn(
       }
 
       tracking.observations.set(currentPlayer.id, observe(game));
+      persistTurnTracking(gameCode, tracking);
     }
   } finally {
     busyGames.delete(gameCode);
   }
 }
 
+export async function restoreAiState(): Promise<void> {
+  const store = getAiStore();
+  const trackingRows = await store.loadAllTurnTracking();
+  turnTracking.clear();
+  for (const row of trackingRows) {
+    turnTracking.set(row.gameCode, deserializeTracking(row.data));
+  }
+  const errorRows = await store.loadAllAiErrors();
+  aiErrors.clear();
+  for (const row of errorRows) {
+    aiErrors.set(aiErrorKey(row.gameCode, row.playerId), row.message);
+  }
+}
+
+export function unloadAiState(): void {
+  turnTracking.clear();
+  aiErrors.clear();
+}
+
 export function resetTurnContext(gameCode: string): void {
   turnTracking.delete(gameCode);
+  queueAiWrite(`aitracking:${gameCode}`, () => getAiStore().deleteTurnTracking(gameCode));
 }
 
 export function resetAiErrors(gameCode: string): void {
@@ -162,6 +220,26 @@ export function resetAiErrors(gameCode: string): void {
       aiErrors.delete(key);
     }
   }
+  queueAiWrite(`aierrors:${gameCode}`, () => getAiStore().deleteGameAiErrors(gameCode));
+}
+
+export function purgeAiState(gameCode: string): void {
+  resetTurnContext(gameCode);
+  resetAiErrors(gameCode);
+}
+
+export async function resumePendingAiTurns(io: SocketIOServer, games: Game[]): Promise<void> {
+  await Promise.all(
+    games
+      .filter((game) => {
+        const state = game.getState();
+        if (state.phase !== "playing") {
+          return false;
+        }
+        return state.players[state.currentTurnIndex]?.isAI === true;
+      })
+      .map((game) => maybeRunNextTurn(io, game, game.getState().id))
+  );
 }
 
 export function _resetAiRunnerState(): void {

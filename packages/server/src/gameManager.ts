@@ -3,7 +3,7 @@ import type { GameState } from "@rummikub/shared";
 import { Game } from "./game.js";
 import { purgeGame } from "./ai/providers/llm.js";
 import { purgeGame as purgeDebugTranscripts } from "./ai/debug.js";
-import { resetTurnContext } from "./ai/runner.js";
+import { purgeAiState } from "./ai/runner.js";
 import { createGameStore, NoopGameStore } from "./storage/gameStore.js";
 import type { GameStore } from "./storage/gameStore.js";
 import { serializeGameState } from "./storage/serialize.js";
@@ -40,6 +40,10 @@ export class GameManager {
     return this.games.get(gameCode);
   }
 
+  getGames(): Game[] {
+    return [...this.games.values()];
+  }
+
   gameCodeExists(gameCode: string): boolean {
     return this.games.has(gameCode);
   }
@@ -52,7 +56,7 @@ export class GameManager {
         this.games.delete(code);
         purgeGame(code);
         purgeDebugTranscripts(code);
-        resetTurnContext(code);
+        purgeAiState(code);
         this.queuePersist(code, () => this.store.deleteGame(code));
         removed++;
       }
