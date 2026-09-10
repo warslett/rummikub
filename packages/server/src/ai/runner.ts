@@ -122,15 +122,12 @@ export async function maybeRunNextTurn(
     while (game.getState().phase === "playing") {
       const state = game.getState();
       const currentPlayer = state.players[state.currentTurnIndex];
-      if (!currentPlayer?.isAI) {
-        break;
-      }
-      if (aiErrors.has(aiErrorKey(gameCode, currentPlayer.id))) {
-        break;
-      }
 
       let tracking = turnTracking.get(gameCode);
-      if (!tracking || tracking.roundNumber !== state.roundNumber) {
+      if (
+        (!tracking || tracking.roundNumber !== state.roundNumber) &&
+        state.players.some((p) => p.isAI)
+      ) {
         tracking = {
           roundNumber: state.roundNumber,
           turnNumber: 0,
@@ -139,6 +136,16 @@ export async function maybeRunNextTurn(
         };
         turnTracking.set(gameCode, tracking);
         persistTurnTracking(gameCode, tracking);
+      }
+
+      if (!currentPlayer?.isAI) {
+        break;
+      }
+      if (!tracking) {
+        break;
+      }
+      if (aiErrors.has(aiErrorKey(gameCode, currentPlayer.id))) {
+        break;
       }
 
       const previous = tracking.observations.get(currentPlayer.id) ?? tracking.baseline;

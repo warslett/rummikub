@@ -646,4 +646,65 @@ test.describe("AI Player Infrastructure", () => {
 
     await ctx.close();
   });
+
+  test("TC-AI-17: AI's first turn reports the human's opening move", async ({ browser }) => {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+
+    const gameCode = await createGame(page, "Alice");
+    await addAiPlayer(page, undefined, "Bot One");
+    await startGameWithAi(page);
+
+    const gameState = await getGameStateFromServer(gameCode);
+    const humanPlayer = gameState.players.find((p: { isAI?: boolean }) => !p.isAI);
+    const aiPlayer = gameState.players.find((p: { isAI?: boolean }) => p.isAI);
+
+    const meldSet = {
+      id: "set-1",
+      tiles: [
+        { id: "red-10-a", color: "red", value: 10 },
+        { id: "red-11-a", color: "red", value: 11 },
+        { id: "red-12-a", color: "red", value: 12 },
+      ],
+    };
+
+    // Alice goes first and plays an initial meld; the AI draws on its first turn
+    await seedGameServer(gameCode, {
+      board: [],
+      racks: {
+        [humanPlayer.id]: [...meldSet.tiles, { id: "blue-1-a", color: "blue", value: 1 }],
+        [aiPlayer.id]: [{ id: "black-1-a", color: "black", value: 1 }],
+      },
+      pool: [{ id: "orange-2-a", color: "orange", value: 2 }],
+      currentTurnPlayerId: humanPlayer.id,
+      hasInitialMeld: { [humanPlayer.id]: false, [aiPlayer.id]: true },
+      aiScripts: {
+        [aiPlayer.id]: [{ action: "drawTile" }],
+      },
+    });
+
+    // Alice makes her initial meld and ends her turn, after which the AI takes turn 1
+    await expect(page.getByText(/Your turn/i).first()).toBeVisible({ timeout: 10000 });
+    const rack = page.locator(".gap-2.p-4.rounded-lg");
+    const rackButtons = rack.locator("button");
+    await expect(rackButtons.first()).toBeVisible({ timeout: 5000 });
+    for (let i = 0; i < 3; i++) {
+      await rackButtons.nth(i).click();
+    }
+    await page.getByRole("button", { name: /Play Selected/ }).click();
+    await page.getByRole("button", { name: "End Turn" }).click();
+
+    await expect(page.getByText(/Your turn/i).first()).toBeVisible({ timeout: 10000 });
+
+    await page.getByTestId("ai-debug-player").first().click();
+    const consolePanel = page.getByTestId("ai-debug-console");
+    await expect(consolePanel).toBeVisible();
+    const aiTurn1Prompt = consolePanel
+      .locator('[data-item-type="prompt"]')
+      .filter({ hasText: "Turn 1" });
+    await expect(aiTurn1Prompt).toContainText("Alice made changes to the board and ended his turn");
+    await expect(aiTurn1Prompt).not.toContainText("No new events");
+
+    await ctx.close();
+  });
 });

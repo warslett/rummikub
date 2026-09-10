@@ -375,6 +375,55 @@ describe("AiTurnRunner", () => {
       getProviderSpy.mockRestore();
     });
 
+    it("should include a human's first move in the events note of the AI's first turn", async () => {
+      game.addPlayer("p1", "Alice");
+      const ai = game.addAiPlayer("test-model");
+      game.start();
+      game.seedGame({
+        board: [],
+        racks: {
+          p1: [
+            { id: "red-10-a", color: "red", value: 10 },
+            { id: "red-11-a", color: "red", value: 11 },
+            { id: "red-12-a", color: "red", value: 12 },
+          ],
+          [ai.id]: [{ id: "black-2-a", color: "black", value: 2 }],
+        },
+        pool: [
+          { id: "red-1-a", color: "red", value: 1 },
+          { id: "red-2-a", color: "red", value: 2 },
+        ],
+        currentTurnPlayerId: "p1",
+        hasInitialMeld: { p1: false, [ai.id]: true },
+      });
+
+      const contexts: (TurnContext | undefined)[] = [];
+      const stubProvider = createContextCapturingProvider(contexts);
+      const getProviderSpy = vi.spyOn(providersModule, "getProvider").mockReturnValue(stubProvider);
+
+      // The runner runs at game start, before the human plays, establishing the round baseline
+      await maybeRunNextTurn(io, game, "TEST01");
+
+      game.playSets("p1", [
+        {
+          id: "s1",
+          tiles: [
+            { id: "red-10-a", color: "red", value: 10 },
+            { id: "red-11-a", color: "red", value: 11 },
+            { id: "red-12-a", color: "red", value: 12 },
+          ],
+        },
+      ]);
+      game.endTurn("p1");
+      await maybeRunNextTurn(io, game, "TEST01");
+
+      expect(contexts).toHaveLength(1);
+      expect(contexts[0]?.turnNumber).toBe(1);
+      expect(contexts[0]?.eventsNote).toContain("Alice made changes to the board and ended his turn");
+
+      getProviderSpy.mockRestore();
+    });
+
     it("should include every opponent's events in each AI's events note", async () => {
       game.addPlayer("p1", "Alice");
       const ai1 = game.addAiPlayer("model-1");

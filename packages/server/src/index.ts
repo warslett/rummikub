@@ -3,7 +3,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { registerHandlers, manager } from "./handlers.js";
 import { emitPlayerStates } from "./emissions.js";
-import { maybeRunNextTurn, resumePendingAiTurns } from "./ai/runner.js";
+import { maybeRunNextTurn, resumePendingAiTurns, resetTurnContext } from "./ai/runner.js";
 import { createGameStore } from "./storage/gameStore.js";
 import { bootPersistence, reloadGames } from "./storage/bootstrap.js";
 import { flushAiWrites } from "./storage/aiStore.js";
@@ -42,6 +42,7 @@ if (process.env.NODE_ENV === "test") {
     }
     try {
       game.seedGame(state);
+      resetTurnContext(gameCode);
       emitPlayerStates(io, game, gameCode);
       maybeRunNextTurn(io, game, gameCode);
       res.json({ ok: true });

@@ -271,6 +271,33 @@ describe("Socket Handlers AI Integration", () => {
     expect(runnerSpy).toHaveBeenCalled();
   });
 
+  it("should reset turn context on game:seed", () => {
+    const runnerSpy = vi.spyOn(runnerModule, "maybeRunNextTurn").mockResolvedValue();
+    const resetTurnContextSpy = vi.spyOn(runnerModule, "resetTurnContext").mockImplementation(() => {});
+
+    socket.callbacks["game:create"]({ playerName: "Alice" });
+    const createEvt = socket.emitted.find((e) => e.event === "game:created");
+    const gameCode = (createEvt?.data as { gameCode: string }).gameCode;
+    const game = manager.getGame(gameCode)!;
+    game.addAiPlayer("test-model");
+    game.start();
+    const aiPlayerId = game.getState().players.find((p) => p.isAI)!.id;
+
+    socket.callbacks["game:seed"]({
+      gameCode,
+      state: {
+        board: [],
+        racks: {},
+        pool: [{ id: "red-5-a", color: "red", value: 5 }],
+        currentTurnPlayerId: aiPlayerId,
+        hasInitialMeld: {},
+      },
+    });
+
+    expect(resetTurnContextSpy).toHaveBeenCalledWith(gameCode);
+    expect(runnerSpy).toHaveBeenCalled();
+  });
+
   it("should delete persisted AI rows for older rounds on game:playAgain", async () => {
     const store = new RecordingAiStore();
     setAiStore(store);

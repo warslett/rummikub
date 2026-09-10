@@ -423,6 +423,7 @@ export function registerHandlers(io: SocketIOServer): void {
           return;
         }
 
+        resetTurnContext(gameCode);
         emitPlayerStates(io, game, gameCode);
         maybeRunNextTurn(io, game, gameCode);
       });
