@@ -245,6 +245,39 @@ describe("Socket Handlers AI Integration", () => {
     expect(runnerSpy).toHaveBeenCalled();
   });
 
+  it("should call maybeRunNextTurn after game:reconnect", () => {
+    const runnerSpy = vi.spyOn(runnerModule, "maybeRunNextTurn").mockResolvedValue();
+    socket.callbacks["game:create"]({ playerName: "Alice" });
+    const createEvt = socket.emitted.find((e) => e.event === "game:created");
+    const gameCode = (createEvt?.data as { gameCode: string }).gameCode;
+    const game = manager.getGame(gameCode)!;
+    const playerId = game.getState().players[0].id;
+    game.addAiPlayer("test-model");
+    game.start();
+
+    socket.callbacks["game:reconnect"]({ gameCode, playerId });
+
+    expect(runnerSpy).toHaveBeenCalled();
+  });
+
+  it("should emit game:lobbyState on reconnect to a lobby game", () => {
+    socket.callbacks["game:create"]({ playerName: "Alice" });
+    const createEvt = socket.emitted.find((e) => e.event === "game:created");
+    const gameCode = (createEvt?.data as { gameCode: string }).gameCode;
+    const game = manager.getGame(gameCode)!;
+    const playerId = game.getState().players[0].id;
+
+    socket.callbacks["game:reconnect"]({ gameCode, playerId });
+
+    const lobbyEvts = io._emittedRoom.filter(
+      (e) => e.room === gameCode && e.event === "game:lobbyState"
+    );
+    expect(lobbyEvts.length).toBeGreaterThanOrEqual(2);
+    const payload = lobbyEvts[lobbyEvts.length - 1].data as GameLobbyStatePayload;
+    expect(payload.players).toHaveLength(1);
+    expect(payload.players[0].name).toBe("Alice");
+  });
+
   describe("ai:debugHistory", () => {
     function setupAiGameWithTurn() {
       vi.stubEnv("AI_DEBUG", "true");

@@ -39,12 +39,14 @@ For test commands, see [unit_testing.md](unit_testing.md) and [e2e_testing.md](e
 - **Shared package for types only**: `packages/shared` contains types, constants, and validation. No framework-specific code.
 - **Never send private data**: Player rack tiles are never sent to opponents. Only rack size is shared.
 - **Game state is immutable on client**: Clients receive state updates from the server via Socket.IO events. They never compute game state locally.
+- **Persistence lives in `packages/server/src/storage/`**: `Game` and game logic never issue SQL. The `Game` class exposes a persist hook; `GameManager` wires it to the `GameStore`.
+- **Persistence failures never break gameplay**: a failed save is logged and gameplay continues in memory; the next successful save self-heals.
+- **Boot fails fast when the configured DB is unreachable**: with `DATABASE_URL` set, the server retries a few times then exits with a clear error. Unset `DATABASE_URL` ⇒ in-memory only.
 
 ## Common Pitfalls
 
 - Do not implement game rules on the client — all validation is server-side
 - Do not use `any` — if a type is complex, define a proper interface
-- Do not persist game state to disk — MVP uses in-memory storage only
 - Jokers have special rules — always test joker edge cases
 - Initial meld (30-point minimum) only applies to a player's first turn
 - After tile manipulation, ALL sets on the board must be valid — no orphaned tiles

@@ -10,7 +10,19 @@ The dev container has **no default `CMD`** — `docker compose up dev` starts th
 
 ## Production Environment
 
-`docker-compose.yml` — builds optimized images from each package's Dockerfile.
+`docker-compose.yml` — builds optimized images from each package's Dockerfile. It also runs a `postgres` service (`postgres:16-alpine`) with a named volume `pgdata` and a `pg_isready` healthcheck. The `server` service depends on postgres being healthy and receives `DATABASE_URL` (default `postgres://rummikub:rummikub@postgres:5432/rummikub`), so persistence is on by default. To run the server in-memory only under compose, remove/comment the `DATABASE_URL` mapping for the `server` service (an empty `DATABASE_URL=` still falls back to the postgres default because the mapping uses `:-`); when running the server directly, simply unset `DATABASE_URL`.
+
+### Backing up and restoring the database
+
+```bash
+# Backup (dump the rummikub database to a file on the host)
+docker compose exec postgres pg_dump -U rummikub rummikub > backup.sql
+
+# Restore (from a dump file)
+cat backup.sql | docker compose exec -T postgres psql -U rummikub -d rummikub
+```
+
+The `pgdata` named volume holds all game state; `docker compose down` keeps it, `docker compose down -v` deletes it.
 
 ## Running Commands in the Dev Container
 

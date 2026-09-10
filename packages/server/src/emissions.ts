@@ -43,8 +43,7 @@ export function emitGameEnded(
   const state = game.getState();
   if (scores) {
     game.applyScores(scores);
-    const winner = state.players.find((p) => p.id === endResult.winnerId);
-    if (winner) winner.gamesWon++;
+    game.recordGameWon(endResult.winnerId);
     const loserMap = new Map(scores.losers.map((l) => [l.id, l]));
     io.to(gameCode).emit("game:ended", {
       winnerId: endResult.winnerId,
@@ -71,10 +70,9 @@ export function emitStalemateEnded(
   const scores = game.calculateStalemateScores();
   if (scores) {
     game.applyScores(scores);
+    game.recordGameWon(scores.winnerId);
     const state = game.getState();
     const players = state.players;
-    const stalemateWinner = players.find((p) => p.id === scores.winnerId);
-    if (stalemateWinner) stalemateWinner.gamesWon++;
     const loserMap = new Map(scores.losers.map((l) => [l.id, l]));
     io.to(gameCode).emit("game:ended", {
       winnerId: scores.winnerId,

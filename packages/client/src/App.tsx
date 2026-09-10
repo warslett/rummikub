@@ -99,6 +99,19 @@ export function App() {
       setAiError(data);
     });
 
+    const routeMatch = window.location.pathname.match(/^\/(?:game|lobby)\/([A-Za-z0-9]+)/);
+    if (routeMatch) {
+      const urlGameCode = routeMatch[1];
+      const savedPlayerId = localStorage.getItem("rummikub_playerId");
+      const savedGameCode = localStorage.getItem("rummikub_gameCode");
+      if (savedPlayerId && savedGameCode === urlGameCode) {
+        if (!socket.active) {
+          socket.connect();
+        }
+        socket.emit("game:reconnect", { gameCode: savedGameCode, playerId: savedPlayerId });
+      }
+    }
+
     return () => {
       socket.off("game:state");
       socket.off("game:started");
@@ -208,12 +221,6 @@ function GameBoardWrapper() {
   }
 
   if (!gameState || !playerId) {
-    const savedPlayerId = localStorage.getItem("rummikub_playerId");
-    const savedGameCode = localStorage.getItem("rummikub_gameCode");
-    if (savedPlayerId && savedGameCode && !socket.connected) {
-      socket.connect();
-      socket.emit("game:reconnect", { gameCode: savedGameCode, playerId: savedPlayerId });
-    }
     return <Lobby />;
   }
 

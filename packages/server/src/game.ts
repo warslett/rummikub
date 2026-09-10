@@ -41,6 +41,7 @@ export interface SeedState {
 
 export class Game {
   private state: GameState;
+  private persistCallback: ((state: GameState) => void) | null = null;
 
   constructor(gameCode: string) {
     this.state = {
@@ -57,6 +58,16 @@ export class Game {
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
     };
+  }
+
+  onPersist(cb: (state: GameState) => void): void {
+    this.persistCallback = cb;
+  }
+
+  private notifyPersist(): void {
+    if (this.persistCallback) {
+      this.persistCallback(this.state);
+    }
   }
 
   addPlayer(playerId: string, name: string): void {
@@ -78,6 +89,7 @@ export class Game {
       connected: true,
       gamesWon: 0,
     });
+    this.notifyPersist();
   }
 
   addAiPlayer(model: string, name?: string): Player {
@@ -100,6 +112,7 @@ export class Game {
       model,
     };
     this.state.players.push(aiPlayer);
+    this.notifyPersist();
     return aiPlayer;
   }
 
@@ -116,6 +129,7 @@ export class Game {
       throw new Error("Cannot remove human player");
     }
     this.state.players.splice(index, 1);
+    this.notifyPersist();
   }
 
   start(): void {
@@ -138,6 +152,7 @@ export class Game {
     this.state.roundNumber = 1;
     this.state.consecutivePasses = 0;
     this.state.lastActivityAt = Date.now();
+    this.notifyPersist();
   }
 
   drawTile(playerId: string): void {
@@ -155,6 +170,7 @@ export class Game {
     this.state.turnActions.push({ type: "draw" });
     this.state.consecutivePasses = 0;
     this.advanceTurn();
+    this.notifyPersist();
   }
 
   playSets(playerId: string, sets: TileSet[]): void {
@@ -182,6 +198,7 @@ export class Game {
     this.state.board.push(...sets);
     this.state.turnActions.push({ type: "placeSet", tiles: allPlayedTiles });
     this.state.lastActivityAt = Date.now();
+    this.notifyPersist();
   }
 
   manipulateBoard(playerId: string, newBoard: TileSet[]): void {
@@ -262,6 +279,7 @@ export class Game {
     this.state.board = sortedBoard;
     this.state.turnActions.push({ type: "manipulate" });
     this.state.lastActivityAt = Date.now();
+    this.notifyPersist();
   }
 
   undoTurn(playerId: string): void {
@@ -278,6 +296,7 @@ export class Game {
     player.rack = deepClone(snapshot.rack);
     this.state.turnActions = [];
     this.state.lastActivityAt = Date.now();
+    this.notifyPersist();
   }
 
   endTurn(playerId: string): void {
@@ -328,6 +347,7 @@ export class Game {
 
     this.state.turnActions = [];
     this.advanceTurn();
+    this.notifyPersist();
   }
 
   endTurnWithBoard(playerId: string, newBoard?: TileSet[]): void {
@@ -355,16 +375,19 @@ export class Game {
 
     if (this.state.consecutivePasses >= this.state.players.length) {
       this.endGameStalemate();
+      this.notifyPersist();
       return;
     }
 
     this.advanceTurn();
+    this.notifyPersist();
   }
 
   checkGameEnd(): { winnerId: string; winnerName: string } | null {
     for (const player of this.state.players) {
       if (player.rack.length === 0) {
         this.state.phase = "ended";
+        this.notifyPersist();
         return { winnerId: player.id, winnerName: player.name };
       }
     }
@@ -436,6 +459,13 @@ export class Game {
       const player = this.state.players.find((p) => p.id === loser.id);
       if (player) player.score += loser.penalty;
     }
+    this.notifyPersist();
+  }
+
+  recordGameWon(playerId: string): void {
+    const player = this.getPlayer(playerId);
+    player.gamesWon++;
+    this.notifyPersist();
   }
 
   getRackValue(playerId: string): number {
@@ -472,6 +502,7 @@ export class Game {
     this.state.roundNumber++;
     this.state.consecutivePasses = 0;
     this.state.lastActivityAt = Date.now();
+    this.notifyPersist();
   }
 
   reconnectPlayer(playerId: string): void {
@@ -480,6 +511,13 @@ export class Game {
       throw new Error("Cannot reconnect AI player");
     }
     player.connected = true;
+    this.notifyPersist();
+  }
+
+  setPlayerConnected(playerId: string, connected: boolean): void {
+    const player = this.getPlayer(playerId);
+    player.connected = connected;
+    this.notifyPersist();
   }
 
   seedGame(seed: SeedState): void {
@@ -501,6 +539,16 @@ export class Game {
     const turnIndex = this.state.players.findIndex((p) => p.id === seed.currentTurnPlayerId);
     this.state.currentTurnIndex = turnIndex >= 0 ? turnIndex : 0;
     this.state.lastActivityAt = Date.now();
+    this.notifyPersist();
+  }
+
+  restoreState(state: GameState): void {
+    this.state = deepClone(state);
+    for (const player of this.state.players) {
+      if (!player.isAI) {
+        player.connected = false;
+      }
+    }
   }
 
   getState(): GameState {

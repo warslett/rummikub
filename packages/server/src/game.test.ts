@@ -1608,4 +1608,215 @@ describe("Game", () => {
       expect(fresh.getState().seededScripts?.[ai.id]).toEqual([{ action: "drawTile" }]);
     });
   });
+
+  describe("persist hook", () => {
+    function captureStates(fresh: Game): ReturnType<Game["getState"]>[] {
+      const states: ReturnType<Game["getState"]>[] = [];
+      fresh.onPersist((state) => states.push(JSON.parse(JSON.stringify(state))));
+      return states;
+    }
+
+    it("should fire once per mutation with the post-mutation state", () => {
+      const fresh = new Game("TEST01");
+      const states = captureStates(fresh);
+
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.start();
+
+      expect(states).toHaveLength(3);
+      expect(states[0].players).toHaveLength(1);
+      expect(states[1].players).toHaveLength(2);
+      expect(states[2].phase).toBe("playing");
+    });
+
+    it("should fire after drawTile, playSets, undoTurn, endTurn and passTurn", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.start();
+      fresh.seedGame({
+        board: [],
+        racks: {
+          p1: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")],
+          p2: [],
+        },
+        pool: [makeTile("blue", 1, "b1a")],
+        currentTurnPlayerId: "p1",
+        hasInitialMeld: { p1: false, p2: false },
+      });
+
+      const states = captureStates(fresh);
+
+      fresh.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }]);
+      fresh.undoTurn("p1");
+      fresh.playSets("p1", [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }]);
+      fresh.endTurn("p1");
+      fresh.drawTile("p2");
+
+      expect(states).toHaveLength(5);
+      expect(states[0].board).toHaveLength(1);
+      expect(states[1].board).toHaveLength(0);
+      expect(states[2].board).toHaveLength(1);
+      expect(states[3].currentTurnIndex).toBe(1);
+      expect(states[4].players[1].rack).toHaveLength(1);
+    });
+
+    it("should fire after applyScores, startNewRound, reconnectPlayer and setPlayerConnected", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.start();
+
+      const states = captureStates(fresh);
+
+      fresh.applyScores({ winnerId: "p1", winnerName: "Alice", winnerScore: 10, losers: [{ id: "p2", name: "Bob", penalty: -5, rackValue: 5 }] });
+      fresh.getState().phase = "ended";
+      fresh.startNewRound();
+      fresh.reconnectPlayer("p2");
+      fresh.setPlayerConnected("p2", false);
+
+      expect(states).toHaveLength(4);
+      expect(states[0].players[0].score).toBe(10);
+      expect(states[1].roundNumber).toBe(2);
+      expect(states[2].players[1].connected).toBe(true);
+      expect(states[3].players[1].connected).toBe(false);
+    });
+
+    it("should fire after recordGameWon with the updated gamesWon", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.start();
+
+      const states = captureStates(fresh);
+
+      fresh.recordGameWon("p1");
+
+      expect(states).toHaveLength(1);
+      expect(states[0].players[0].gamesWon).toBe(1);
+      expect(states[0].players[1].gamesWon).toBe(0);
+    });
+
+    it("should fire when checkGameEnd flips the phase to ended", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+      fresh.start();
+      fresh.seedGame({
+        board: [],
+        racks: { p1: [], p2: [makeTile("black", 2, "k2a")] },
+        pool: [],
+        currentTurnPlayerId: "p1",
+        hasInitialMeld: { p1: true, p2: true },
+      });
+
+      const states = captureStates(fresh);
+      const result = fresh.checkGameEnd();
+
+      expect(result).toEqual({ winnerId: "p1", winnerName: "Alice" });
+      expect(states).toHaveLength(1);
+      expect(states[0].phase).toBe("ended");
+    });
+
+    it("should be a no-op when no callback is set", () => {
+      const fresh = new Game("TEST01");
+      expect(() => {
+        fresh.addPlayer("p1", "Alice");
+        fresh.addPlayer("p2", "Bob");
+        fresh.start();
+      }).not.toThrow();
+    });
+  });
+
+  describe("restoreState", () => {
+    it("should round-trip a mid-turn state including snapshot and actions", () => {
+      const original = new Game("TEST01");
+      original.addPlayer("p1", "Alice");
+      original.addPlayer("p2", "Bob");
+      original.start();
+      original.seedGame({
+        board: [{ id: "s1", tiles: [makeTile("red", 10, "r10a"), makeTile("red", 11, "r11a"), makeTile("red", 12, "r12a")] }],
+        racks: {
+          p1: [makeTile("blue", 1, "b1a"), makeTile("blue", 2, "b2a"), makeTile("blue", 3, "b3a")],
+          p2: [makeTile("black", 2, "k2a")],
+        },
+        pool: [makeTile("orange", 3, "o3a")],
+        currentTurnPlayerId: "p1",
+        hasInitialMeld: { p1: true, p2: false },
+      });
+      original.playSets("p1", [{ id: "s2", tiles: [makeTile("blue", 1, "b1a"), makeTile("blue", 2, "b2a"), makeTile("blue", 3, "b3a")] }]);
+
+      const snapshot = original.getState();
+      const prePlayerState = original.getPlayerState("p1");
+
+      const restored = new Game("TEST01");
+      restored.restoreState(snapshot);
+
+      const expected = JSON.parse(JSON.stringify(snapshot)) as ReturnType<Game["getState"]>;
+      for (const player of expected.players) {
+        if (!player.isAI) {
+          player.connected = false;
+        }
+      }
+      expect(restored.getState()).toEqual(expected);
+      const expectedPlayerState = JSON.parse(JSON.stringify(prePlayerState)) as ReturnType<Game["getPlayerState"]>;
+      for (const opponent of expectedPlayerState.opponents) {
+        if (!opponent.isAI) {
+          opponent.connected = false;
+        }
+      }
+      expect(restored.getPlayerState("p1")).toEqual(expectedPlayerState);
+      expect(restored.getState().turnActions).toHaveLength(1);
+      expect(restored.getState().turnSnapshot).not.toBeNull();
+    });
+
+    it("should mark human players disconnected and keep AI players connected", () => {
+      const original = new Game("TEST01");
+      original.addPlayer("p1", "Alice");
+      const ai = original.addAiPlayer("test-model");
+      original.start();
+
+      const restored = new Game("TEST01");
+      restored.restoreState(original.getState());
+
+      const players = restored.getState().players;
+      expect(players.find((p) => p.id === "p1")!.connected).toBe(false);
+      expect(players.find((p) => p.id === ai.id)!.connected).toBe(true);
+    });
+
+    it("should not mutate the source state object", () => {
+      const original = new Game("TEST01");
+      original.addPlayer("p1", "Alice");
+      original.addPlayer("p2", "Bob");
+      original.start();
+
+      const snapshot = original.getState();
+      const restored = new Game("TEST01");
+      restored.restoreState(snapshot);
+
+      expect(original.getState().players[0].connected).toBe(true);
+      expect(restored.getState().players[0].connected).toBe(false);
+    });
+  });
+
+  describe("setPlayerConnected", () => {
+    it("should update the player's connected flag", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      fresh.addPlayer("p2", "Bob");
+
+      fresh.setPlayerConnected("p1", false);
+      expect(fresh.getState().players[0].connected).toBe(false);
+
+      fresh.setPlayerConnected("p1", true);
+      expect(fresh.getState().players[0].connected).toBe(true);
+    });
+
+    it("should throw for an unknown player", () => {
+      const fresh = new Game("TEST01");
+      fresh.addPlayer("p1", "Alice");
+      expect(() => fresh.setPlayerConnected("nope", false)).toThrow();
+    });
+  });
 });

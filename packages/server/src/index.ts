@@ -4,6 +4,10 @@ import { Server } from "socket.io";
 import { registerHandlers, manager } from "./handlers.js";
 import { emitPlayerStates } from "./emissions.js";
 import { maybeRunNextTurn } from "./ai/runner.js";
+import { createGameStore } from "./storage/gameStore.js";
+import { bootPersistence, reloadGames } from "./storage/bootstrap.js";
+import { dbHealth } from "./storage/db.js";
+import { storageConfig } from "./storage/config.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -13,8 +17,9 @@ const io = new Server(httpServer, {
 
 app.use(express.json());
 
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok" });
+app.get("/health", async (_req, res) => {
+  const db = storageConfig.enabled ? await dbHealth() : false;
+  res.json({ status: "ok", db });
 });
 
 if (process.env.NODE_ENV === "test") {
@@ -43,12 +48,44 @@ if (process.env.NODE_ENV === "test") {
       res.status(400).json({ error: (err as Error).message });
     }
   });
+
+  app.post("/test/reload", async (_req, res) => {
+    const restored = await reloadGames(manager);
+    res.json({ ok: true, restored });
+  });
 }
 
-registerHandlers(io);
-manager.startCleanup();
+async function start(): Promise<void> {
+  const store = createGameStore();
+  const restored = await bootPersistence(manager, store);
+  if (storageConfig.enabled) {
+    console.log(`Restored ${restored} game(s) from database`);
+  }
 
-const PORT = parseInt(process.env.PORT ?? "3000", 10);
-httpServer.listen(PORT, () => {
-  console.log(`Rummikub server listening on port ${PORT}`);
+  registerHandlers(io);
+  manager.startCleanup();
+
+  const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
+    console.log(`Received ${signal}, flushing pending game writes...`);
+    manager.stopCleanup();
+    try {
+      await manager.flushStorage();
+      await store.close();
+    } catch (err) {
+      console.error("Error during shutdown:", err);
+    }
+    process.exit(0);
+  };
+  process.once("SIGTERM", () => void shutdown("SIGTERM"));
+  process.once("SIGINT", () => void shutdown("SIGINT"));
+
+  const PORT = parseInt(process.env.PORT ?? "3000", 10);
+  httpServer.listen(PORT, () => {
+    console.log(`Rummikub server listening on port ${PORT}`);
+  });
+}
+
+start().catch((err) => {
+  console.error("Failed to start server:", err);
+  process.exit(1);
 });

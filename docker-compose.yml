@@ -1,4 +1,18 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=rummikub
+      - POSTGRES_PASSWORD=rummikub
+      - POSTGRES_DB=rummikub
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rummikub -d rummikub"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   server:
     build:
       context: .
@@ -7,6 +21,7 @@ services:
       - "3000:3000"
     environment:
       - PORT=${PORT:-3000}
+      - DATABASE_URL=${DATABASE_URL:-postgres://rummikub:rummikub@postgres:5432/rummikub}
       - AI_PROVIDER=${AI_PROVIDER:-scripted}
       - AI_BASE_URL=${AI_BASE_URL:-https://opencode.ai/zen/v1}
       - AI_API_KEY=${AI_API_KEY:-}
@@ -19,6 +34,9 @@ services:
       - AI_CONTEXT_TOKEN_LIMIT=${AI_CONTEXT_TOKEN_LIMIT:-100000}
       - AI_COMPACT_KEEP_TURNS=${AI_COMPACT_KEEP_TURNS:-6}
       - AI_DEBUG=${AI_DEBUG:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   client:
     build:
@@ -28,3 +46,6 @@ services:
       - "5173:80"
     depends_on:
       - server
+
+volumes:
+  pgdata:

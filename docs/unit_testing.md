@@ -23,6 +23,7 @@ Always run the relevant test command after making changes. Run `npm test` from r
 - For Socket.IO handlers: test event handling and state transitions
 - For React components: prefer integration-style tests that verify rendered output
 - Use the shared validation functions in tests to verify game rules
+- Storage tests (`packages/server/src/storage/*.test.ts`) use **pg-mem** (an in-memory Postgres) — no external database is needed to run the unit/integration suite
 
 ## See Also
 

@@ -26,9 +26,11 @@ Prerequisites: Plan A (015) — storage config, `db.ts`, `ensureSchema`, Postgre
 ## Scope Decisions
 
 - **Same storage layer, same lifecycle**: four new tables in `ensureSchema` (Plan A's `db.ts`), all with `REFERENCES games(game_code) ON DELETE CASCADE` — deleting an expired game row automatically deletes its AI records, matching the existing `purgeGame` semantics
+- **Boot/reload seam**: Plan A centralised boot restore and `/test/reload` in `packages/server/src/storage/bootstrap.ts` (`bootPersistence()` / `reloadGames()`); `index.ts` only calls those helpers. AI restore/unload is wired into `bootstrap.ts` (no `io` dependency), while the pending-AI-turn boot sweep — which needs `io` — stays in `index.ts` after `bootPersistence()` returns. This keeps AI restore unit-testable via `bootstrap.test.ts`.
 - **Write-through with pragmatic sync points** (the in-memory maps remain the working stores; DB is a mirror):
   - **Conversations**: persisted when a conversation is created, when compaction replaces it, and once at the end of every `takeTurn` (success **or** error, via `try/finally`). A crash mid-turn loses at most the current partial exchange — identical exposure to today's in-memory behaviour; the next turn-start message re-syncs the model
   - **Turn tracking**: persisted after each turn number update; **AI errors**: persisted on set/delete; **Transcripts**: persisted per recorded item (only when `AI_DEBUG=true`, low volume)
+- **Ordered, flushable writes**: AI writes are serialized per record key through the same promise-chain pattern Plan A uses for games (`GameManager.queuePersist`), so an earlier snapshot (e.g. conversation creation) can never overwrite a later one (append, then end-of-turn save). A shared AI write-flush (drained by `reloadGames` and graceful shutdown) ensures `/test/reload` and SIGTERM do not race a pending AI write
 - **Load at boot, not lazily**: `restoreAiState()` fills the in-memory maps from the DB during startup (before the server accepts traffic), keeping the existing module-level maps and all call sites unchanged
 - **Failure policy mirrors Plan A**: DB write failures are logged, never break an AI turn; DB unreachable at boot is Plan A's fail-fast (this plan reuses it — AI tables are created in the same `ensureSchema`)
 - **No new env vars**: everything is governed by `DATABASE_URL` (Plan A) and `AI_DEBUG` (existing)
@@ -60,8 +62,8 @@ Prerequisites: Plan A (015) — storage config, `db.ts`, `ensureSchema`, Postgre
 - Game expiry → cascade deletes AI rows even if `purgeGame` DB calls are skipped (belt-and-braces: keep explicit deletes too)
 - LLM error mid-turn after some tool calls → conversation persisted in error state (matches "save at end of takeTurn even on throw"); paused game survives restart via aiErrors row
 - Postgres restart mid-AI-turn → failed conversation save logged; next turn's save heals; the in-memory conversation is unaffected
-- Boot restore ordering: AI state must be restored before any `maybeRunNextTurn` boot sweep runs (order enforced in index.ts step)
-- `/test/reload` must also unload/restore AI in-memory state, otherwise e2e would see stale conversations (extended in Step 7)
+- Boot restore ordering: AI state must be restored before any `maybeRunNextTurn` boot sweep runs (AI restore completes inside the awaited `bootPersistence()`; the sweep in `index.ts` runs afterwards)
+- `/test/reload` must first drain pending AI writes, then unload/restore AI in-memory state, otherwise e2e would see stale or lost conversations (extended in Step 7)
 
 ## E2E Tests
 
@@ -84,7 +86,7 @@ Same dev-server setup as Plan A (postgres + `DATABASE_URL`). Uses the `scripted`
   - `ai_errors (game_code, player_id, message TEXT, PK(game_code, player_id))`
   - `ai_debug_transcripts (game_code, round_number, player_id, items JSONB, PK(game_code, round_number, player_id))`
 - New `packages/server/src/storage/aiStore.ts`:
-  - `AiStore` interface + `PostgresAiStore`/`NoopAiStore` + `createAiStore()` factory, wired off the same `storageConfig`
+  - `AiStore` interface + `PostgresAiStore`/`NoopAiStore` + `createAiStore(config?, pool?)` factory mirroring `createGameStore` (same `storageConfig`; `NoopAiStore` when disabled; reuse `getPool`/`releasePool`)
   - Conversations: `upsertConversation(key, messages)`, `loadAllConversations(): Promise<{key, messages}[]>`, `deleteConversationsBeforeRound(gameCode, round)`, `deleteGameConversations(code)`
   - Turn tracking: `upsertTurnTracking(gameCode, data)`, `loadAllTurnTracking()`, `deleteTurnTracking(gameCode)`
   - Errors: `upsertAiError(gameCode, playerId, message)`, `loadAllAiErrors()`, `deleteAiError(gameCode, playerId)`, `deleteGameAiErrors(gameCode)`
@@ -96,10 +98,10 @@ Same dev-server setup as Plan A (postgres + `DATABASE_URL`). Uses the `scripted`
 ### Step 2: Conversation persistence in LlmProvider
 
 - `packages/server/src/ai/providers/llm.ts`:
-  - Module-level `aiStore` (set once via `setAiStore()` from index.ts; default Noop)
+  - Module-level `aiStore` (set once via `setAiStore()` from `bootstrap.ts`'s `bootPersistence`; default Noop)
   - Persist on conversation creation and after compaction (at the `conversations.set` sites)
   - Wrap the `takeTurn` loop body in `try/finally` → persist the conversation once at exit (success, thrown error, or iteration cap)
-- `packages/server/src/gameManager.ts` (or index.ts boot): `setAiStore(createAiStore())` alongside the game store
+- `packages/server/src/storage/bootstrap.ts` (`bootPersistence`): `setAiStore(aiStore)` alongside `manager.setStore(store)` so the AI store is wired before any restore (a `NoopAiStore` when persistence is disabled)
 - **Tests** (`llm.test.ts`): fake store — conversation persisted at creation; after each completed turn (success and thrown-error paths) the saved messages match the in-memory map; post-compaction save; unset store → no-op; existing conversation-lifecycle tests still pass
 
 ---
@@ -127,11 +129,13 @@ Same dev-server setup as Plan A (postgres + `DATABASE_URL`). Uses the `scripted`
 
 ### Step 5: Boot restore + pending-turn resume
 
-- `packages/server/src/index.ts` (after Plan A's `restoreGames()`, before `listen`):
+- `packages/server/src/storage/bootstrap.ts` (`bootPersistence`, after `manager.restoreGames()`):
   - `await restoreAiState()` (tracking + errors), `await restoreTranscripts()`, `await restoreConversations()` (fills `llm.ts` map)
-  - Boot sweep: for each restored game with `phase === "playing"` and an AI current player, fire-and-forget `maybeRunNextTurn(io, game, code)` (respects persisted `aiErrors`; busy-set prevents overlap; no-op for human turns)
-- Order dependency: AI restore must complete before the sweep (single awaited sequence)
-- **Tests** (`index`-level integration in `handlers.test.ts` style or a new `boot.test.ts`): restored game with AI to move triggers the runner once; persisted aiError prevents re-run; human-turn game does not trigger
+  - These run only when persistence is enabled, in a single awaited sequence so AI state is fully loaded before boot returns
+- `packages/server/src/index.ts` (after `await bootPersistence(manager, store)`, before `listen`):
+  - Boot sweep: for each restored game with `phase === "playing"` and an AI current player, fire-and-forget `maybeRunNextTurn(io, game, code)` (respects persisted `aiErrors`; busy-set prevents overlap; no-op for human turns) — lives here because it needs `io`
+- Order dependency: AI restore must complete before the sweep (the `await bootPersistence(...)` guarantees this)
+- **Tests** (`bootstrap.test.ts` for `bootPersistence` AI restore ordering; `index`-level integration in `handlers.test.ts` style or a new `boot.test.ts` for the sweep): restored game with AI to move triggers the runner once; persisted aiError prevents re-run; human-turn game does not trigger
 
 ---
 
@@ -145,7 +149,7 @@ Same dev-server setup as Plan A (postgres + `DATABASE_URL`). Uses the `scripted`
 
 ### Step 7: `/test/reload` extension + e2e + docs
 
-- `packages/server/src/index.ts`: `POST /test/reload` now also `unloadAiState()` + `unloadTranscripts()` + clear conversations, then re-restore from the store (full restart simulation)
+- `packages/server/src/storage/bootstrap.ts` (`reloadGames`): now also drain any pending AI writes, then `unloadAiState()` + `unloadTranscripts()` + clear conversations, then re-restore from the store (full restart simulation). `index.ts`'s `POST /test/reload` is unchanged — it already calls `reloadGames(manager)`
 - `packages/qa/tests/ai-persistence.spec.ts`: TC-AI-15, TC-AI-16 (per tables above; dev server already runs with `AI_DEBUG=true` per e2e_testing.md)
 - `docs/prd.md`:
   - 3.9.1 "Persistent conversation" bullet: add "…and is persisted, so it survives server restarts (as do turn tracking, AI error/pause state and debug transcripts)"
@@ -168,11 +172,13 @@ Same dev-server setup as Plan A (postgres + `DATABASE_URL`). Uses the `scripted`
 | `packages/server/src/ai/runner.test.ts` | Persistence tests |
 | `packages/server/src/ai/debug.ts` | Transcript upsert/restore/reset/purge |
 | `packages/server/src/ai/debug.test.ts` | Persistence tests |
-| `packages/server/src/gameManager.ts` | `setAiStore`, `purgeAiState` in expiry cleanup |
+| `packages/server/src/gameManager.ts` | `purgeAiState` in expiry cleanup (next to existing `purgeGame`/`purgeDebugTranscripts`/`resetTurnContext`) |
 | `packages/server/src/gameManager.test.ts` | Expiry cascade/purge assertions |
+| `packages/server/src/storage/bootstrap.ts` | `setAiStore`, AI restore in `bootPersistence`; AI unload/restore in `reloadGames` |
+| `packages/server/src/storage/bootstrap.test.ts` | AI restore ordering + reload tests |
 | `packages/server/src/handlers.ts` | Play Again DB row deletion |
 | `packages/server/src/handlers.test.ts` | Play Again persistence tests |
-| `packages/server/src/index.ts` | AI restore + boot sweep; `/test/reload` extension |
+| `packages/server/src/index.ts` | Boot sweep (`maybeRunNextTurn` for restored AI turns); `/test/reload` already delegates to `reloadGames` |
 | `packages/qa/tests/ai-persistence.spec.ts` | New — TC-AI-15, TC-AI-16 |
 | `docs/prd.md`, `docs/entities.md`, `README.md` | As above |
 

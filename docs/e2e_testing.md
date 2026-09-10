@@ -4,7 +4,13 @@ Playwright runs in a dedicated Docker container based on the official `mcr.micro
 
 ## Starting the Dev Server
 
-The dev server has no default `CMD` — you must provide the command explicitly:
+The dev server has no default `CMD` — you must provide the command explicitly. Persistence tests (TC-PS-01..03) require a PostgreSQL instance; start it first:
+
+```bash
+docker compose -f docker-compose.dev.yml --profile e2e up -d postgres
+```
+
+Then start the dev server:
 
 ```bash
 docker compose -f docker-compose.dev.yml run -d --name dev-server \
@@ -13,6 +19,7 @@ docker compose -f docker-compose.dev.yml run -d --name dev-server \
   -e AI_PROVIDER=scripted \
   -e AI_DEFAULT_MODEL=test-model \
   -e AI_DEBUG=true \
+  -e DATABASE_URL=postgres://postgres:postgres@postgres:5432/rummikub \
   dev \
   sh -c "npm run build --workspace=packages/shared && npm run build --workspace=packages/server && npx concurrently 'node --watch packages/server/dist/index.js' 'npx vite packages/client --host 0.0.0.0 --port 5173'"
 ```
@@ -24,20 +31,26 @@ docker compose -f docker-compose.dev.yml run -d --name dev-server \
 | `-d` | Run in background so you can then run Playwright in a separate container |
 | `--name dev-server` | Allows easy cleanup: `docker rm -f dev-server` |
 | `-p 3000:3000 -p 5173:5173` | Publish both ports so the Playwright container can reach them on `localhost` |
-| `-e NODE_ENV=test` | Enables the `/test/seed` endpoint on the server. **Without this, all E2E tests that call `seedGame` will fail with 404.** |
+| `-e NODE_ENV=test` | Enables the `/test/seed` and `/test/reload` endpoints on the server. **Without this, all E2E tests that call `seedGame` or `reloadServer` will fail with 404.** |
 | `-e AI_PROVIDER=scripted` | Configures the server to use deterministic scripted AI provider for E2E tests |
 | `-e AI_DEFAULT_MODEL=test-model` | Sets default model name for AI player selection in tests |
 | `-e AI_DEBUG=true` | Enables the AI debug console (transcript recording, `ai:debug` broadcasts, clickable AI players in the strip). **Required for the AI debug console tests (TC-AI-13/TC-AI-14); harmless for other tests** |
+| `-e DATABASE_URL=postgres://postgres:postgres@postgres:5432/rummikub` | Points the server at the dev postgres container so game state persists. **Required for the persistence tests (TC-PS-01..03)**. Omit it to run the server in-memory only |
 | `npm run build --workspace=packages/shared` | Must rebuild shared before server so the server picks up latest types |
 | `npm run build --workspace=packages/server` | Must build server TypeScript before `node --watch` can run it |
 | `npx vite packages/client --host 0.0.0.0` | The `--host 0.0.0.0` flag is **required** — without it Vite only listens on localhost inside the container |
 | `npx concurrently '...' '...'` | Runs both server and Vite frontend simultaneously |
 
+### Test-only endpoints
+
+- `POST /test/seed` — seeds a deterministic game state (used by `seedGame()`).
+- `POST /test/reload` — simulates a server restart: unloads all in-memory games and re-loads them from the database (used by `reloadServer()` in the persistence tests). Returns `{ ok: true, restored }`.
+
 ### Verifying the dev server is ready
 
 ```bash
 curl -s http://localhost:3000/health
-# Should return: {"status":"ok"}
+# Should return: {"status":"ok","db":true} (db:true when DATABASE_URL is set, db:false otherwise)
 
 curl -s -o /dev/null -w "%{http_code}" http://localhost:5173/
 # Should return: 200

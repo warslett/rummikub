@@ -14,6 +14,7 @@
     "build": "echo 'No build step for QA package'"
   },
   "devDependencies": {
-    "@playwright/test": "1.52.0"
+    "@playwright/test": "1.52.0",
+    "socket.io-client": "^4.8.0"
   }
 }

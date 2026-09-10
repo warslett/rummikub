@@ -76,8 +76,8 @@ The official Rummikub rules are maintained in [rules.md](rules.md) as the single
 | ID | Requirement |
 |----|-------------|
 | F-33 | Inactive games (no moves made) expire after 24 hours |
-| F-34 | Game state is held in server memory only - no database persistence for MVP |
-| F-35 | Game state is lost on server restart (acceptable for MVP) |
+| F-34 | Game state is persisted to PostgreSQL on every change (write-through) |
+| F-35 | Games survive server restarts; players reconnect via the game URL and continue where they left off |
 
 ### 3.7 Lobby / Home Page
 
@@ -117,6 +117,15 @@ When it is an AI player's turn, the server runs a **tool-calling agent loop** ag
 - **Compaction**: before each turn the conversation's token count is estimated (`Math.ceil(chars/4)`); if it exceeds `AI_CONTEXT_TOKEN_LIMIT` (default 100000), all but the last `AI_COMPACT_KEEP_TURNS` exchanges are replaced with a model-generated summary plus a fixed note telling the model that board state is authoritative via `get_game_state`. Summarization failure falls back to truncation (`compaction_fallback`) instead of pausing. Compaction is transparent to the model conversation only; the debug transcript buffer is append-only and never compacted.
 - **Debug console (replaces server-side logging)**: when `AI_DEBUG=true`, transcript items (Prompt, Thinking, Tool call, Response — readable text only, tool calls by name) are recorded server-side at the points where messages enter the conversation, buffered in memory per game/round/player (append-only for the round, unaffected by compaction), and broadcast live to the game room as `ai:debug` events; clients request the full round history via `ai:debugHistory` when the console opens. An `aiDebug` flag in `game:state` tells clients whether AI players are clickable. When off (default): no events, no buffer, no history endpoint, AI players are not clickable.
 
+### 3.10 Persistent Storage
+
+| ID | Requirement |
+|----|-------------|
+| F-53 | Full game state (racks, board, pool, scores, turn snapshot, turn actions, phase, round number) persists to PostgreSQL on every mutation |
+| F-54 | The 24-hour inactivity expiry deletes persisted games from the database as well as from memory |
+| F-55 | AI conversation/session, turn tracking, AI errors and debug transcripts survive restarts — delivered by Plan B |
+| F-56 | Persistence is enabled by default via `DATABASE_URL`; unsetting it runs the server in-memory only |
+
 ## 4. Non-Functional Requirements
 | ID | Requirement |
 |----|-------------|
@@ -139,6 +148,7 @@ When it is an AI player's turn, the server runs a **tool-calling agent loop** ag
 | Real-time | Socket.IO | Auto-reconnection, room support, fallback transports, broadcast to rooms |
 | Frontend | React + Vite | Component-based UI, fast dev server, large ecosystem |
 | Styling | CSS Modules or Tailwind | Scoped styles, responsive design support |
+| Persistence | PostgreSQL (via `pg`) | Write-through game-state persistence; full `GameState` snapshots stored as JSONB, one row per game |
 | Deployment | Docker | Containerized, deployable to any cloud platform |
 
 ### 5.2 Architecture: Server-Authoritative
@@ -214,6 +224,7 @@ rummikub/
 │   │   │   ├── index.ts     # Entry point, Express + Socket.IO setup
 │   │   │   ├── game.ts      # Game state machine
 │   │   │   ├── gameManager.ts # Manages all active games
+│   │   │   ├── storage/     # PostgreSQL persistence (config, db, game store)
 │   │   │   ├── handlers/    # Socket.IO event handlers
 │   │   │   └── utils/       # Helpers (game code gen, etc.)
 │   │   ├── Dockerfile
@@ -305,7 +316,7 @@ type TurnAction =
 
 4. **Game code generation**: 6-character alphanumeric code, excluding ambiguous characters (0/O, 1/I/l). ~1.5 billion possible codes.
 
-5. **No database**: All state in memory for MVP. A Map<string, GameState> in the server process.
+5. **Write-through persistence**: Every game mutation persists the full `GameState` snapshot to PostgreSQL (JSONB, one row per game, updated in place). The in-memory `Map<string, Game>` remains the working cache; games are restored from the database on boot. When `DATABASE_URL` is unset, the server runs in-memory only (no database).
 
 6. **Spectator via same room**: Spectators join the Socket.IO room but receive a filtered state (no rack data).
 
@@ -352,7 +363,6 @@ These features are explicitly deferred but should be considered in architecture 
 - In-game chat
 - AI opponent / practice mode
 - User accounts and game history
-- Persistent storage (database)
 - Tournament / ranked play
 - Sound effects and animations
 - Multiple rule variants (French, International)
@@ -407,7 +417,7 @@ These features are explicitly deferred but should be considered in architecture 
 - [ ] Chat
 - [ ] Valid move highlighting
 - [ ] Touch support
-- [ ] Persistent storage
+- [x] Persistent storage (game state — F-34/F-35/F-53..F-56; AI session persistence is a follow-up)
 - [ ] Turn timer
 - [ ] Sound effects / animations
 - [ ] Accessibility improvements

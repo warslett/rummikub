@@ -18,6 +18,7 @@ export async function createGame(page: import("@playwright/test").Page, playerNa
   await page.getByPlaceholder("Enter your name").fill(playerName);
   await page.getByRole("button", { name: "Create Game" }).click();
   await page.waitForURL(/\/lobby\//);
+  await page.waitForFunction(() => !!localStorage.getItem("rummikub_playerId"));
   const url = page.url();
   const match = url.match(/\/lobby\/([A-Z0-9]+)$/);
   expect(match).toBeTruthy();
@@ -29,6 +30,7 @@ export async function joinGame(page: import("@playwright/test").Page, playerName
   await page.getByPlaceholder("Enter your name").fill(playerName);
   await page.getByRole("button", { name: "Join Game" }).click();
   await page.waitForURL(/\/lobby\//);
+  await page.waitForFunction(() => !!localStorage.getItem("rummikub_playerId"));
 }
 
 export async function startGame(player1Page: import("@playwright/test").Page, player2Page: import("@playwright/test").Page) {
@@ -82,6 +84,16 @@ export async function seedGame(gameCode: string, state: SeedState): Promise<void
     body: JSON.stringify({ gameCode, state }),
   });
   expect(resp.ok).toBe(true);
+}
+
+export async function reloadServer(): Promise<number> {
+  const resp = await fetch(`${SERVER_URL}/test/reload`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  expect(resp.ok).toBe(true);
+  const body = (await resp.json()) as { ok: boolean; restored: number };
+  return body.restored;
 }
 
 export { expect };

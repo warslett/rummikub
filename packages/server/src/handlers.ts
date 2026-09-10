@@ -303,6 +303,16 @@ export function registerHandlers(io: SocketIOServer): void {
         playerName: game.getState().players.find((p) => p.id === playerId)!.name,
       });
       emitPlayerStates(io, game, gameCode);
+      if (game.getState().phase === "lobby") {
+        const players = game.getState().players.map((p) => ({
+          id: p.id,
+          name: p.name,
+          isAI: p.isAI ?? false,
+          model: p.model,
+        }));
+        io.to(gameCode).emit("game:lobbyState", { players });
+      }
+      maybeRunNextTurn(io, game, gameCode);
     });
 
     socket.on("ai:add", (payload?: { model?: string; name?: string }) => {
@@ -424,7 +434,7 @@ export function registerHandlers(io: SocketIOServer): void {
         if (game) {
           const player = game.getState().players.find((p) => p.id === data.playerId);
           if (player) {
-            player.connected = false;
+            game.setPlayerConnected(player.id, false);
             socket.to(data.gameCode).emit("player:disconnected", {
               playerId: player.id,
               playerName: player.name,

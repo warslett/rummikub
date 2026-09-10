@@ -11,7 +11,8 @@
 | **Game** | The top-level aggregate root. Owns all other entities. Tracks the game phase (lobby → playing → ended), whose turn it is, the board, the pool, a log of the current turn's actions, and a turn snapshot for undo. Tracks `roundNumber` (increments on Play Again) and `consecutivePasses` for stalemate detection. |
 | **TurnAction** | A record of a single action within the current turn — placing a set of tiles (`placeSet`), drawing a tile (`draw`), manipulating the board (`manipulate`), or passing (`pass`). Cleared when the turn ends. Used to enforce initial-meld rules and track whether a player has acted this turn. |
 | **TurnSnapshot** | A capture of the board and current player's rack at the start of a turn. Used by undo to revert all changes made during the turn. Null at the start of a turn; created on first action. |
-| **GameManager** | A singleton registry that maps game codes to `Game` instances. Responsible for generating unique game codes, providing lookup, and periodically cleaning up games inactive for over 24 hours. Not persisted (in-memory only). |
+| **GameManager** | A singleton registry that maps game codes to `Game` instances. Responsible for generating unique game codes, providing lookup, and periodically cleaning up games inactive for over 24 hours. Writes every game mutation through to a `GameStore` (per-game serialized write queue) and restores games from it on boot. |
+| **GameStore** | Persistence layer for game state. `PostgresGameStore` stores one row per game in the `games` table — the full `GameState` as JSONB plus queryable `phase`, `created_at` and `last_activity_at` columns. `NoopGameStore` is used when `DATABASE_URL` is unset (in-memory only). Lifecycle: write-through upsert on every mutation, restore all non-expired games on boot, delete on 24h expiry (runtime cleanup and boot purge). |
 | **SetValidationError** | A structured validation error for an invalid tile set. Contains the set ID, a machine-readable reason code (`SetValidationReason`), and a human-readable message. Produced by `getSetValidationError` and `getBoardValidationErrors` in the shared package. |
 | **AiProvider** | Pluggable turn-taker: scripted or LLM; invoked by the AiTurnRunner through an AiTurnController. |
 | **LlmProvider** | Tool-calling AI agent (`AI_PROVIDER=llm`). Runs an agent loop against an OpenAI-compatible chat completions endpoint: the model receives a system prompt (rules + its private state) and takes its turn by calling tools that map 1:1 to the AiTurnController verbs (`get_game_state`, `play_sets`, `manipulate_board`, `undo_turn`, `draw_tile`, `end_turn`, `pass_turn`). Rejections are returned as tool-result errors so the model can retry. Its **conversation** is the ordered list of messages (system prompt, turn-start notes, assistant replies, tool results) kept per game/round/player and reset on Play Again. The conversation is **bounded**: when its estimated token count exceeds `AI_CONTEXT_TOKEN_LIMIT`, all but the last `AI_COMPACT_KEEP_TURNS` exchanges are folded into a model-generated summary (with a fixed note that board state is authoritative via `get_game_state`); summarization failure falls back to truncation. When `AI_DEBUG=true`, transcript items (Prompt, Thinking, Tool call, Response) are recorded per game/round/player and broadcast as `ai:debug` events for the client debug console instead of being logged to the server console (off by default). |
@@ -34,6 +35,7 @@
 | Player → Tile (rack) | 1:N | A player's rack holds their private tiles (0–14+ tiles). |
 | TileSet → Tile | 1:N (3+) | A tile set contains 3 or more tiles that form a valid run or group. |
 | GameManager → Game | 1:N | The manager holds all active games indexed by game code. |
+| GameManager → GameStore | 1:1 | The manager writes every game mutation through to its store and restores games from it on boot. |
 | Board validation → SetValidationError | 1:0..N | A board validation produces zero or more errors, one per invalid set. |
 
 ## Entity-Relationship Diagram
@@ -41,6 +43,7 @@
 ```mermaid
 erDiagram
     GameManager ||--o{ Game : "manages"
+    GameManager ||--|| GameStore : "persists to"
     Game ||--|{ Player : "has 2-4"
     Game ||--o{ TileSet : "board contains"
     Game ||--o{ Tile : "pool contains"
@@ -51,6 +54,14 @@ erDiagram
 
     GameManager {
         string gameCode PK
+    }
+
+    GameStore {
+        string game_code PK
+        string phase
+        jsonb state
+        timestamptz created_at
+        timestamptz last_activity_at
     }
 
     Game {
