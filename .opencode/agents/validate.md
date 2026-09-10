@@ -2,7 +2,6 @@
 description: Validates that all checks pass after a feature implementation. Invoked with a summary of changes made. Runs lint, typecheck, unit/integration tests, and e2e tests, fixing any failures.
 mode: subagent
 hidden: true
-model: opencode-go/deepseek-v4-flash
 permission:
   edit: allow
   bash:

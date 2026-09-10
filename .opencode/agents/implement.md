@@ -2,7 +2,6 @@
 description: Implements code changes using TDD. Given instructions (possibly with a plan file), reads reference docs, writes failing tests first, then implements the minimum code to pass them.
 mode: subagent
 hidden: true
-model: opencode-go/deepseek-v4-flash
 temperature: 0.2
 permission:
   edit: allow

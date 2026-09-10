@@ -2,7 +2,6 @@
 description: Reviews code changes in the work tree against master, writes findings to .agents/codereview/
 mode: subagent
 hidden: true
-model: opencode-go/glm-5.1
 temperature: 0.1
 permission:
   edit:
